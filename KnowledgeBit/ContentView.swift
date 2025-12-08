@@ -1,66 +1,82 @@
-//
-//  ContentView.swift
-//  KnowledgeBit
-//
-//  Created by JustinLu on 2025/12/8.
-//
-
+// ContentView.swift
 import SwiftUI
 import SwiftData
 
 struct ContentView: View {
-    @Environment(\.modelContext) private var modelContext
-    @Query private var items: [Item]
+  // 1. 告訴 App 我們要查詢 Card 資料
+  @Environment(\.modelContext) private var modelContext
+  @Query(sort: \Card.createdAt, order: .reverse) private var cards: [Card]
 
-    var body: some View {
-        NavigationSplitView {
-            List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))")
-                    } label: {
-                        Text(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))
-                    }
-                }
-                .onDelete(perform: deleteItems)
-            }
-#if os(macOS)
-            .navigationSplitViewColumnWidth(min: 180, ideal: 200)
-#endif
-            .toolbar {
-#if os(iOS)
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    EditButton()
-                }
-#endif
-                ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
-                    }
-                }
-            }
-        } detail: {
-            Text("Select an item")
+  // 控制新增視窗的開關
+  @State private var showingAddCardSheet = false
+
+  // ContentView.swift 的 body 修改如下：
+
+  var body: some View {
+    NavigationStack {
+      // 1. 改成 VStack，這樣才能放按鈕在列表上面
+      VStack(spacing: 20) {
+        StatsView()
+          .padding(.top)
+        // 新增：開始測驗按鈕
+        NavigationLink(destination: QuizView()) {
+          HStack {
+            Image(systemName: "play.fill")
+            Text("開始每日測驗")
+              .fontWeight(.bold)
+          }
+          .frame(maxWidth: .infinity)
+          .padding()
+          .background(Color.blue)
+          .foregroundColor(.white)
+          .cornerRadius(10)
+          .padding()
         }
-    }
 
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(timestamp: Date())
-            modelContext.insert(newItem)
-        }
-    }
-
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            for index in offsets {
-                modelContext.delete(items[index])
+        // 原本的列表 List
+        List {
+          ForEach(cards) { card in
+            // ... 裡面的程式碼不變 ...
+            NavigationLink {
+              CardDetailView(card: card)
+            } label: {
+              // ... 顯示卡片 UI 不變 ...
+              HStack {
+                VStack(alignment: .leading) {
+                  Text(card.title)
+                    .font(.headline)
+                  Text(card.deck)
+                    .font(.caption)
+                  // ...
+                }
+                // ...
+              }
             }
+          }
+          .onDelete(perform: deleteItems)
         }
+      }
+      .background(Color(UIColor.systemGroupedBackground))
+      .navigationTitle("KnowledgeBit")
+      .toolbar {
+        // ... 工具列按鈕保持不變 ...
+        ToolbarItem(placement: .primaryAction) {
+          Button(action: { showingAddCardSheet = true }) {
+            Label("Add Item", systemImage: "plus")
+          }
+        }
+      }
+      .sheet(isPresented: $showingAddCardSheet) {
+        AddCardView()
+      }
     }
-}
+  }
 
-#Preview {
-    ContentView()
-        .modelContainer(for: Item.self, inMemory: true)
+  private func deleteItems(offsets: IndexSet) {
+    withAnimation {
+      for index in offsets {
+        modelContext.delete(cards[index])
+      }
+    }
+  }
 }
