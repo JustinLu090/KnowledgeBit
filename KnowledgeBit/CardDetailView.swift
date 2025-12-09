@@ -15,7 +15,6 @@ struct CardDetailView: View {
 
         Text(card.content)
           .font(.body)
-        // 這裡暫時用 Text，未來可以換成 MarkdownView 渲染庫
 
         Spacer()
       }

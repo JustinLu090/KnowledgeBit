@@ -9,16 +9,15 @@ struct ContentView: View {
 
   // 控制新增視窗的開關
   @State private var showingAddCardSheet = false
+  @State private var showingSettingsSheet = false
 
   // ContentView.swift 的 body 修改如下：
 
   var body: some View {
     NavigationStack {
-      // 1. 改成 VStack，這樣才能放按鈕在列表上面
       VStack(spacing: 20) {
         StatsView()
           .padding(.top)
-        // 新增：開始測驗按鈕
         NavigationLink(destination: QuizView()) {
           HStack {
             Image(systemName: "play.fill")
@@ -33,23 +32,19 @@ struct ContentView: View {
           .padding()
         }
 
-        // 原本的列表 List
         List {
           ForEach(cards) { card in
-            // ... 裡面的程式碼不變 ...
             NavigationLink {
               CardDetailView(card: card)
             } label: {
-              // ... 顯示卡片 UI 不變 ...
+
               HStack {
                 VStack(alignment: .leading) {
                   Text(card.title)
                     .font(.headline)
                   Text(card.deck)
                     .font(.caption)
-                  // ...
                 }
-                // ...
               }
             }
           }
@@ -59,7 +54,11 @@ struct ContentView: View {
       .background(Color(UIColor.systemGroupedBackground))
       .navigationTitle("KnowledgeBit")
       .toolbar {
-        // ... 工具列按鈕保持不變 ...
+        ToolbarItem(placement: .topBarLeading) {
+          Button(action: { showingSettingsSheet = true }) {
+            Label("Settings", systemImage: "gearshape")
+          }
+        }
         ToolbarItem(placement: .primaryAction) {
           Button(action: { showingAddCardSheet = true }) {
             Label("Add Item", systemImage: "plus")
@@ -68,6 +67,9 @@ struct ContentView: View {
       }
       .sheet(isPresented: $showingAddCardSheet) {
         AddCardView()
+      }
+      .sheet(isPresented: $showingSettingsSheet) {
+        SettingsView()
       }
     }
   }

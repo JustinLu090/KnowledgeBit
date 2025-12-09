@@ -1,8 +1,19 @@
 import WidgetKit
 import SwiftUI
 import SwiftData
+import AppIntents
 
-// 1. 定義 Widget 要顯示的資料結構
+
+struct RefreshCardIntent: AppIntent {
+  static var title: LocalizedStringResource = "換一張卡片"
+
+  init() {}
+
+  func perform() async throws -> some IntentResult {
+    return .result()
+  }
+}
+
 struct SimpleEntry: TimelineEntry {
   let date: Date
   let cardTitle: String
@@ -11,13 +22,10 @@ struct SimpleEntry: TimelineEntry {
 }
 
 struct Provider: TimelineProvider {
-  // ⚠️ 請務必將此處換成您剛剛設定的 App Group ID
   let appGroupIdentifier = "group.com.lu.KnowledgeBit"
 
-  // 負責從資料庫抓取一張卡片
   @MainActor
   func fetchRandomCard() -> SimpleEntry {
-    // 1. 設定資料庫路徑 (指向共用區)
     let schema = Schema([Card.self])
     let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false, groupContainer: .identifier(appGroupIdentifier))
 
@@ -25,11 +33,9 @@ struct Provider: TimelineProvider {
       let container = try ModelContainer(for: schema, configurations: [modelConfiguration])
       let context = container.mainContext
 
-      // 2. 抓取所有卡片
       let descriptor = FetchDescriptor<Card>()
       let cards = try context.fetch(descriptor)
 
-      // 3. 隨機挑一張，如果沒卡片就顯示預設文字
       if let randomCard = cards.randomElement() {
         return SimpleEntry(date: Date(), cardTitle: randomCard.title, cardContent: randomCard.content, deckName: randomCard.deck)
       } else {
@@ -53,28 +59,25 @@ struct Provider: TimelineProvider {
 
   func getTimeline(in context: Context, completion: @escaping (Timeline<SimpleEntry>) -> ()) {
     Task {
-      // 1. 抓取資料
+      // 每次 Timeline 被觸發（包含按鈕點擊），就會跑這行
       let entry = await fetchRandomCard()
 
-      // 2. 設定下次更新時間 (例如 15 分鐘後換一張)
       let nextUpdateDate = Calendar.current.date(byAdding: .minute, value: 15, to: Date())!
 
-      // 3. 建立時間軸
       let timeline = Timeline(entries: [entry], policy: .after(nextUpdateDate))
       completion(timeline)
     }
   }
 }
 
-// 2. 設計 Widget 的外觀 (UI)
 struct KnowledgeWidgetEntryView : View {
   var entry: Provider.Entry
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
+    VStack(spacing: 0) {
       HStack {
         Text(entry.deckName)
-          .font(.caption)
+          .font(.caption2)
           .fontWeight(.bold)
           .foregroundStyle(.white)
           .padding(.horizontal, 6)
@@ -86,29 +89,66 @@ struct KnowledgeWidgetEntryView : View {
           .font(.caption)
           .foregroundColor(.yellow)
       }
+      .padding(.bottom, 8)
 
-      Text(entry.cardTitle)
-        .font(.headline)
-        .bold()
-        .lineLimit(2)
-        .minimumScaleFactor(0.8)
 
-      Text(entry.cardContent)
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .lineLimit(3) // 限制顯示行數，避免爆版
+      Link(destination: URL(string: "knowledgebit://card?id=\(entry.cardTitle)")!) {
+        VStack(alignment: .leading) {
+          Text(entry.cardTitle)
+            .font(.headline)
+            .bold()
+            .lineLimit(2)
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, alignment: .leading) // 靠左對齊
+
+          Text(entry.cardContent)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(3)
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, alignment: .leading) // 靠左對齊
+        }
+      }
 
       Spacer()
+
+
+      HStack {
+        Button(intent: RefreshCardIntent()) {
+          Image(systemName: "arrow.left.circle.fill")
+            .font(.title2)
+            .foregroundStyle(Color.gray.opacity(0.3))
+        }
+        .buttonStyle(.plain) // 重要：讓按鈕不要有背景色塊
+
+        Spacer()
+
+        // 指示點 (裝飾用，讓它看起來像可以滑動)
+        HStack(spacing: 4) {
+          Circle().fill(Color.gray).frame(width: 4, height: 4)
+          Circle().fill(Color.gray.opacity(0.3)).frame(width: 4, height: 4)
+          Circle().fill(Color.gray.opacity(0.3)).frame(width: 4, height: 4)
+        }
+
+        Spacer()
+
+        // 下一張按鈕
+        Button(intent: RefreshCardIntent()) {
+          Image(systemName: "arrow.right.circle.fill")
+            .font(.title2)
+            .foregroundStyle(Color.blue)
+        }
+        .buttonStyle(.plain)
+      }
+      .padding(.top, 8)
     }
     .padding()
-    // 為了支援 iOS 17 的 Widget 背景容器
     .containerBackground(for: .widget) {
       Color(UIColor.systemBackground)
     }
   }
 }
 
-// 3. Widget 設定入口
 @main
 struct KnowledgeWidget: Widget {
   let kind: String = "KnowledgeWidget"
