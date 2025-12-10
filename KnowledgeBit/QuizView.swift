@@ -2,8 +2,16 @@ import SwiftUI
 import SwiftData
 
 struct QuizView: View {
-  // 1. 抓取所有卡片
-  @Query private var cards: [Card]
+  // Optional: specific cards to quiz (e.g., from a WordSet)
+  // If nil, uses @Query to fetch all cards
+  var cards: [Card]? = nil
+  
+  // Fallback query for all cards if cards parameter is nil
+  @Query(sort: \Card.createdAt, order: .reverse) private var allCards: [Card]
+  
+  // Query for StudyLogs to calculate streak
+  @Query(sort: \StudyLog.date, order: .reverse) private var logs: [StudyLog]
+  
   @Environment(\.dismiss) var dismiss
   @Environment(\.modelContext) private var modelContext
 
@@ -15,70 +23,79 @@ struct QuizView: View {
 
   // 為了不破壞原始順序，我們在出現時把卡片打亂
   @State private var shuffledCards: [Card] = []
+  
+  // Computed property to get cards to use
+  private var cardsToUse: [Card] {
+    cards ?? allCards
+  }
+  
+  // Calculate streak using the same logic as StatsView
+  private var currentStreak: Int {
+    guard !logs.isEmpty else { return 0 }
+    
+    let calendar = Calendar.current
+    let today = calendar.startOfDay(for: Date())
+    
+    // Group study dates (multiple logs on same day count as one day)
+    var studyDates = Set<Date>()
+    for log in logs {
+      let logDate = calendar.startOfDay(for: log.date)
+      studyDates.insert(logDate)
+    }
+    
+    // Calculate consecutive days from today backwards
+    var streak = 0
+    var currentDate = today
+    
+    while studyDates.contains(currentDate) {
+      streak += 1
+      guard let previousDate = calendar.date(byAdding: .day, value: -1, to: currentDate) else {
+        break
+      }
+      currentDate = previousDate
+    }
+    
+    return streak
+  }
 
   var body: some View {
-    VStack {
-      // 上方進度條
-      if !shuffledCards.isEmpty {
-        Text("Question \(currentCardIndex + 1) / \(shuffledCards.count)")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .padding(.top)
-      }
-
-      Spacer()
-
-      if shuffledCards.isEmpty {
-        // 如果沒有卡片
-        ContentUnavailableView("沒有卡片", systemImage: "tray.fill", description: Text("請先新增知識卡片才能開始測驗"))
-      } else if showResult {
-        // 測驗結束畫面
-        VStack(spacing: 20) {
-          Image(systemName: "trophy.fill")
-            .font(.system(size: 80))
-            .foregroundStyle(.yellow)
-          Text("測驗完成！")
-            .font(.title)
-            .bold()
-          Text("你記住了 \(score) 張卡片")
-            .font(.headline)
-
-          Button("完成") {
-            saveStudyLog() // 呼叫存檔
+    Group {
+      if showResult {
+        // 測驗結束畫面 - 使用新的 QuizResultView (全螢幕)
+        QuizResultView(
+          rememberedCards: score,
+          totalCards: shuffledCards.count,
+          streakDays: currentStreak,
+          onFinish: {
+            saveStudyLog()
             dismiss()
+          },
+          onRetry: {
+            retryQuiz()
           }
-          .buttonStyle(.borderedProminent)
-        }
+        )
       } else {
-        // 顯示卡片 (點擊翻面)
-        ZStack {
-          RoundedRectangle(cornerRadius: 20)
-            .fill(Color.blue.opacity(0.1))
-            .shadow(radius: 5)
-
-          VStack {
-            Text(isFlipped ? "💡 答案" : "❓ 問題")
+        // 測驗進行中的畫面
+        VStack {
+          // 上方進度條
+          if !shuffledCards.isEmpty {
+            Text("Question \(currentCardIndex + 1) / \(shuffledCards.count)")
               .font(.caption)
               .foregroundStyle(.secondary)
-              .frame(maxWidth: .infinity, alignment: .leading)
-              .padding()
-
-            Spacer()
-
-            Text(isFlipped ? shuffledCards[currentCardIndex].content : shuffledCards[currentCardIndex].title)
-              .font(.title)
-              .bold()
-              .multilineTextAlignment(.center)
-              .padding()
-            // 翻轉時文字動畫
-              .rotation3DEffect(
-                .degrees(isFlipped ? 180 : 0),
-                axis: (x: 0.0, y: 1.0, z: 0.0)
-              )
-
-            Spacer()
+              .padding(.top)
           }
-        }
+
+          Spacer()
+
+          if shuffledCards.isEmpty {
+            // 如果沒有卡片
+            ContentUnavailableView("沒有卡片", systemImage: "tray.fill", description: Text("請先新增知識卡片才能開始測驗"))
+          } else {
+        // 顯示卡片 (點擊翻面)
+        FlipCardView(
+          card: shuffledCards[currentCardIndex],
+          isFlipped: $isFlipped
+        )
         .frame(height: 400)
         .padding()
         .onTapGesture {
@@ -86,10 +103,6 @@ struct QuizView: View {
             isFlipped.toggle()
           }
         }
-        .rotation3DEffect(
-          .degrees(isFlipped ? 180 : 0),
-          axis: (x: 0.0, y: 1.0, z: 0.0)
-        )
 
         Spacer()
 
@@ -122,11 +135,13 @@ struct QuizView: View {
             .foregroundStyle(.secondary)
             .padding(.bottom, 50)
         }
+          }
+        }
       }
     }
     .onAppear {
       // 進入畫面時，將資料庫的卡片洗牌
-      shuffledCards = cards.shuffled()
+      shuffledCards = cardsToUse.shuffled()
     }
   }
 
@@ -155,6 +170,17 @@ struct QuizView: View {
       } else {
         showResult = true
       }
+    }
+  }
+  
+  // Retry quiz - reset all state and reshuffle cards
+  func retryQuiz() {
+    withAnimation {
+      currentCardIndex = 0
+      isFlipped = false
+      showResult = false
+      score = 0
+      shuffledCards = cardsToUse.shuffled()
     }
   }
 }

@@ -7,17 +7,19 @@ final class Card {
   var id: UUID
   var title: String       // 例如：TCP Handshake
   var content: String     // 詳細解釋 (Markdown)
-  var deck: String        // 分類，例如：CS, Japan, Physics
   var isMastered: Bool    // 是否已精通
   var createdAt: Date
+  
+  // Optional relationship to WordSet
+  var wordSet: WordSet?
 
-  init(title: String, content: String, deck: String = "General") {
+  init(title: String, content: String, wordSet: WordSet? = nil) {
     self.id = UUID()
     self.title = title
     self.content = content
-    self.deck = deck
     self.isMastered = false
     self.createdAt = Date()
+    self.wordSet = wordSet
   }
 }
 

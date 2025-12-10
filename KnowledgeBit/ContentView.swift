@@ -3,68 +3,39 @@ import SwiftUI
 import SwiftData
 
 struct ContentView: View {
-  // 1. 告訴 App 我們要查詢 Card 資料
   @Environment(\.modelContext) private var modelContext
-  @Query(sort: \Card.createdAt, order: .reverse) private var cards: [Card]
 
   // 控制新增視窗的開關
   @State private var showingAddCardSheet = false
   @State private var showingSettingsSheet = false
 
-  // ContentView.swift 的 body 修改如下：
-
   var body: some View {
     NavigationStack {
-      VStack(spacing: 20) {
-        StatsView()
-          .padding(.top)
-        NavigationLink(destination: QuizView()) {
-          HStack {
-            Image(systemName: "play.fill")
-            Text("開始每日測驗")
-              .fontWeight(.bold)
-          }
-          .frame(maxWidth: .infinity)
-          .padding()
-          .background(Color.blue)
-          .foregroundColor(.white)
-          .cornerRadius(10)
-          .padding()
-        }
-
-        List {
-          ForEach(cards) { card in
-            NavigationLink {
-              CardDetailView(card: card)
-            } label: {
-
-              HStack {
-                VStack(alignment: .leading) {
-                  Text(card.title)
-                    .font(.headline)
-                  Text(card.deck)
-                    .font(.caption)
-                }
-              }
-            }
-          }
-          .onDelete(perform: deleteItems)
+      ScrollView {
+        VStack(alignment: .leading, spacing: 24) {
+          // Header Section
+          headerSection
+            .padding(.top, 12)
+            .padding(.horizontal, 20)
+          
+          // Streak Card Section
+          StatsView()
+            .padding(.horizontal, 20)
+          
+          // Daily Quiz Button
+          dailyQuizButton
+            .padding(.horizontal, 20)
+          
+          // Word Set Section
+          wordSetCard
+            .padding(.horizontal, 20)
+          
+          // Bottom padding
+          Spacer()
+            .frame(height: 32)
         }
       }
-      .background(Color(UIColor.systemGroupedBackground))
-      .navigationTitle("KnowledgeBit")
-      .toolbar {
-        ToolbarItem(placement: .topBarLeading) {
-          Button(action: { showingSettingsSheet = true }) {
-            Label("Settings", systemImage: "gearshape")
-          }
-        }
-        ToolbarItem(placement: .primaryAction) {
-          Button(action: { showingAddCardSheet = true }) {
-            Label("Add Item", systemImage: "plus")
-          }
-        }
-      }
+      .background(Color(.systemGroupedBackground))
       .sheet(isPresented: $showingAddCardSheet) {
         AddCardView()
       }
@@ -73,12 +44,97 @@ struct ContentView: View {
       }
     }
   }
-
-  private func deleteItems(offsets: IndexSet) {
-    withAnimation {
-      for index in offsets {
-        modelContext.delete(cards[index])
+  
+  // MARK: - Header Section
+  
+  private var headerSection: some View {
+    HStack(alignment: .center) {
+      // Settings button
+      Button(action: { showingSettingsSheet = true }) {
+        Image(systemName: "gearshape.fill")
+          .font(.system(size: 18))
+          .foregroundStyle(.secondary)
+          .frame(width: 36, height: 36)
+          .background(Color(.systemGray6))
+          .clipShape(Circle())
+      }
+      
+      Spacer()
+      
+      // App title
+      Text("KnowledgeBit")
+        .font(.system(size: 28, weight: .bold))
+        .foregroundStyle(.primary)
+      
+      Spacer()
+      
+      // Add button
+      Menu {
+        Button(action: { showingAddCardSheet = true }) {
+          Label("新增單字", systemImage: "plus.circle")
+        }
+        NavigationLink {
+          WordSetListView()
+        } label: {
+          Label("新增單字集", systemImage: "book.badge.plus")
+        }
+      } label: {
+        Image(systemName: "plus")
+          .font(.system(size: 18, weight: .semibold))
+          .foregroundStyle(.white)
+          .frame(width: 36, height: 36)
+          .background(Color.accentColor)
+          .clipShape(Circle())
       }
     }
+  }
+  
+  // MARK: - Daily Quiz Button
+  
+  private var dailyQuizButton: some View {
+    NavigationLink(destination: QuizView()) {
+      HStack(spacing: 12) {
+        Image(systemName: "play.fill")
+          .font(.system(size: 20, weight: .semibold))
+        Text("開始每日測驗")
+          .font(.system(size: 17, weight: .semibold))
+      }
+      .foregroundColor(.white)
+      .frame(maxWidth: .infinity)
+      .frame(height: 56)
+      .background(Color.accentColor)
+      .cornerRadius(16)
+    }
+    .buttonStyle(.plain)
+  }
+  
+  // MARK: - Word Set Card
+  
+  private var wordSetCard: some View {
+    NavigationLink {
+      WordSetListView()
+    } label: {
+      HStack(alignment: .center, spacing: 16) {
+        VStack(alignment: .leading, spacing: 4) {
+          Text("單字集")
+            .font(.system(size: 18, weight: .semibold))
+            .foregroundStyle(.primary)
+          
+          Text("管理你的單字集")
+            .font(.system(size: 14))
+            .foregroundStyle(.secondary)
+        }
+        
+        Spacer()
+        
+        Image(systemName: "chevron.right")
+          .font(.system(size: 14, weight: .semibold))
+          .foregroundStyle(.tertiary)
+      }
+      .padding(20)
+      .background(Color(.secondarySystemGroupedBackground))
+      .cornerRadius(16)
+    }
+    .buttonStyle(.plain)
   }
 }
