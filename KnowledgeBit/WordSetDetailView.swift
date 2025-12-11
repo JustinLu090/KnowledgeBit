@@ -3,6 +3,7 @@
 
 import SwiftUI
 import SwiftData
+import WidgetKit
 
 struct WordSetDetailView: View {
   @Bindable var wordSet: WordSet
@@ -75,6 +76,15 @@ struct WordSetDetailView: View {
     withAnimation {
       for index in offsets {
         modelContext.delete(cards[index])
+      }
+      
+      // Save to SwiftData
+      do {
+        try modelContext.save()
+        // Reload widget after successful delete
+        WidgetReloader.reloadAll()
+      } catch {
+        print("❌ Failed to delete card: \(error.localizedDescription)")
       }
     }
   }

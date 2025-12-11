@@ -3,6 +3,7 @@
 
 import SwiftUI
 import SwiftData
+import WidgetKit
 
 struct AddWordSetView: View {
   @Environment(\.modelContext) private var modelContext
@@ -39,8 +40,16 @@ struct AddWordSetView: View {
               level: selectedLevel
             )
             modelContext.insert(newWordSet)
-            try? modelContext.save()
-            dismiss()
+            
+            // Save to SwiftData
+            do {
+              try modelContext.save()
+              // Reload widget after successful save
+              WidgetReloader.reloadAll()
+              dismiss()
+            } catch {
+              print("❌ Failed to save word set: \(error.localizedDescription)")
+            }
           }
           .disabled(title.isEmpty)
         }

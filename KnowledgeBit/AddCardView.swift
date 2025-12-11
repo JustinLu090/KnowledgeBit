@@ -1,6 +1,7 @@
 // AddCardView.swift
 import SwiftUI
 import SwiftData
+import WidgetKit
 
 struct AddCardView: View {
   @Environment(\.modelContext) private var modelContext
@@ -64,8 +65,16 @@ struct AddCardView: View {
               )
               modelContext.insert(newCard)
             }
-            try? modelContext.save()
-            dismiss()
+            
+            // Save to SwiftData
+            do {
+              try modelContext.save()
+              // Reload widget after successful save
+              WidgetReloader.reloadAll()
+              dismiss()
+            } catch {
+              print("❌ Failed to save card: \(error.localizedDescription)")
+            }
           }
           .disabled(title.isEmpty)
         }

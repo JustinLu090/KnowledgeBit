@@ -403,7 +403,7 @@ struct KnowledgeWidgetEntryView: View {
       }
 
       // --- D. 桌面小工具 (保留原本的完整 UI) ---
-    case .systemSmall, .systemMedium, .systemLarge:
+    case .systemSmall, .systemMedium, .systemLarge, .systemExtraLarge:
       VStack(spacing: 0) {
         // Top row
         HStack {

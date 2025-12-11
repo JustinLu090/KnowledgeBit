@@ -3,6 +3,7 @@
 
 import SwiftUI
 import SwiftData
+import WidgetKit
 
 struct WordSetListView: View {
   @Query(sort: \WordSet.createdAt, order: .reverse) private var wordSets: [WordSet]
@@ -48,6 +49,15 @@ struct WordSetListView: View {
     withAnimation {
       for index in offsets {
         modelContext.delete(wordSets[index])
+      }
+      
+      // Save to SwiftData
+      do {
+        try modelContext.save()
+        // Reload widget after successful delete
+        WidgetReloader.reloadAll()
+      } catch {
+        print("❌ Failed to delete word set: \(error.localizedDescription)")
       }
     }
   }

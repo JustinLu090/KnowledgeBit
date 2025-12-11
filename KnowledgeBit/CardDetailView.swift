@@ -1,6 +1,7 @@
 // CardDetailView.swift
 import SwiftUI
 import SwiftData
+import WidgetKit
 
 struct CardDetailView: View {
   @Bindable var card: Card
@@ -67,6 +68,8 @@ struct CardDetailView: View {
       modelContext.delete(card)
       do {
         try modelContext.save()
+        // Reload widget after successful delete
+        WidgetReloader.reloadAll()
         dismiss()
       } catch {
         print("❌ Failed to delete card: \(error.localizedDescription)")
