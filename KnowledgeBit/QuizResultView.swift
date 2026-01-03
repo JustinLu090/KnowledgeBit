@@ -7,8 +7,11 @@ struct QuizResultView: View {
   let onFinish: () -> Void
   let onRetry: () -> Void
   
+  @EnvironmentObject var experienceStore: ExperienceStore
+  
   @State private var trophyScale: CGFloat = 0.5
   @State private var showContent: Bool = false
+  @State private var didGrantExp: Bool = false // 防止重複加 EXP
   
   // Calculate accuracy percentage
   private var accuracyPercentage: Int {
@@ -189,6 +192,12 @@ struct QuizResultView: View {
           showContent = true
         }
       }
+      
+      // 給予 EXP（只執行一次）
+      if !didGrantExp {
+        grantExperience()
+        didGrantExp = true
+      }
     }
   }
   
@@ -203,6 +212,35 @@ struct QuizResultView: View {
       return .red
     }
   }
+  
+  // 計算並給予 EXP
+  // 規則：至少 +10；每答對一題 +5
+  private func grantExperience() {
+    guard totalCards > 0 else {
+      print("⚠️ [EXP] 無法給予 EXP：totalCards = 0")
+      return
+    }
+    
+    // 基礎 EXP：至少 10
+    let baseExp = 10
+    
+    // 每答對一題 +5
+    let correctBonus = rememberedCards * 5
+    
+    // 總 EXP
+    let totalExp = baseExp + correctBonus
+    
+    let oldLevel = experienceStore.level
+    let oldExp = experienceStore.exp
+    
+    // 給予 EXP
+    experienceStore.addExp(delta: totalExp)
+    
+    // Debug 輸出
+    print("🎯 [EXP] 測驗結算 - 答對: \(rememberedCards)/\(totalCards), 獲得: \(totalExp) EXP")
+    print("🎯 [EXP] 等級變化: \(oldLevel) → \(experienceStore.level)")
+    print("🎯 [EXP] EXP 變化: \(oldExp) → \(experienceStore.exp)/\(experienceStore.expToNext)")
+  }
 }
 
 // MARK: - Preview
@@ -214,5 +252,6 @@ struct QuizResultView: View {
     onFinish: {},
     onRetry: {}
   )
+  .environmentObject(ExperienceStore())
 }
 

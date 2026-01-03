@@ -1,0 +1,20 @@
+/* EXP 增加動畫 - 可選：如果不想用 style jsx，可以將此檔案引入到全局 CSS */
+
+@keyframes expGainFloat {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  50% {
+    opacity: 1;
+    transform: translate(-50%, -1rem);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -2rem);
+  }
+}
+
+.animate-exp-gain {
+  animation: expGainFloat 2s ease-out forwards;
+}

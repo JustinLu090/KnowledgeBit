@@ -4,6 +4,7 @@ import SwiftData
 
 struct ContentView: View {
   @Environment(\.modelContext) private var modelContext
+  @EnvironmentObject var experienceStore: ExperienceStore
 
   // 控制新增視窗的開關
   @State private var showingAddCardSheet = false
@@ -20,6 +21,10 @@ struct ContentView: View {
           
           // Streak Card Section
           StatsView()
+            .padding(.horizontal, 20)
+          
+          // EXP Card Section
+          ExpCardView(experienceStore: experienceStore)
             .padding(.horizontal, 20)
           
           // Daily Quiz Button

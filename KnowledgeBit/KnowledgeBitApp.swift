@@ -55,9 +55,13 @@ struct KnowledgeBitApp: App {
     }
   }()
 
+  // 建立 ExperienceStore singleton，供整個 App 使用
+  @StateObject private var experienceStore = ExperienceStore()
+  
   var body: some Scene {
     WindowGroup {
       ContentView()
+        .environmentObject(experienceStore)
     }
     .modelContainer(sharedModelContainer)
   }
