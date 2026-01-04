@@ -198,6 +198,7 @@ struct CardEntry: TimelineEntry {
   let cardIndex: Int
   let cardIDs: [String]
   let todoCount: Int // 新增：用於鎖定畫面顯示剩餘張數
+  let todayDueCount: Int // 今日到期複習卡片數
 
   var currentCard: Card? {
     guard cardIndex >= 0 && cardIndex < cards.count else { return nil }
@@ -209,12 +210,13 @@ struct CardEntry: TimelineEntry {
   }
 
   // 初始化：一般情況
-  init(cards: [Card], index: Int, cardIDs: [String], date: Date = Date()) {
+  init(cards: [Card], index: Int, cardIDs: [String], date: Date = Date(), todayDueCount: Int = 0) {
     self.date = date
     self.cards = cards
     self.cardIndex = index
     self.cardIDs = cardIDs
     self.todoCount = cards.count // 簡單起見，這裡用本次輪播的總張數當作待辦數
+    self.todayDueCount = todayDueCount
   }
 
   // 初始化：Placeholder
@@ -224,6 +226,7 @@ struct CardEntry: TimelineEntry {
     self.cardIndex = 0
     self.cardIDs = []
     self.todoCount = 0
+    self.todayDueCount = 0
   }
 }
 
@@ -231,15 +234,26 @@ struct CardEntry: TimelineEntry {
 struct CardTimelineProvider: AppIntentTimelineProvider {
   typealias Intent = ConfigurationAppIntent
   typealias Entry = CardEntry
+  
+  // 從 App Group UserDefaults 讀取今日到期卡片數
+  private func getTodayDueCount() -> Int {
+    guard let defaults = UserDefaults(suiteName: sharedAppGroupIdentifier) else {
+      return 0
+    }
+    return defaults.integer(forKey: "today_due_count")
+  }
 
   func placeholder(in context: Context) -> CardEntry {
     let placeholderCard = Card(title: "TCP Handshake", content: "建立連線的三向交握過程...", wordSet: nil)
     let cardIDs = [placeholderCard.id.uuidString]
-    return CardEntry(cards: [placeholderCard], index: 0, cardIDs: cardIDs)
+    return CardEntry(cards: [placeholderCard], index: 0, cardIDs: cardIDs, todayDueCount: 5)
   }
 
   func snapshot(for configuration: ConfigurationAppIntent, in context: Context) async -> CardEntry {
     let allCards = await KnowledgeBitSharedContainer.fetchAllCards()
+    
+    // 讀取今日到期卡片數
+    let todayDueCount = getTodayDueCount()
 
     if allCards.isEmpty {
       return CardEntry()
@@ -272,11 +286,14 @@ struct CardTimelineProvider: AppIntentTimelineProvider {
       CardIndexStore.setCurrentIndex(validIndex)
     }
 
-    return CardEntry(cards: cardsForWidget, index: validIndex, cardIDs: cardIDs)
+    return CardEntry(cards: cardsForWidget, index: validIndex, cardIDs: cardIDs, todayDueCount: todayDueCount)
   }
 
   func timeline(for configuration: ConfigurationAppIntent, in context: Context) async -> Timeline<CardEntry> {
     let allCards = await KnowledgeBitSharedContainer.fetchAllCards()
+    
+    // 讀取今日到期卡片數
+    let todayDueCount = getTodayDueCount()
 
     if allCards.isEmpty {
       let entry = CardEntry()
@@ -321,7 +338,8 @@ struct CardTimelineProvider: AppIntentTimelineProvider {
         cards: cardsForWidget,
         index: (validIndex + i) % cardsForWidget.count,
         cardIDs: cardIDs,
-        date: entryDate
+        date: entryDate,
+        todayDueCount: todayDueCount
       )
       entries.append(entry)
     }
@@ -427,6 +445,23 @@ struct KnowledgeWidgetEntryView: View {
               .cornerRadius(4)
           }
           Spacer()
+          
+          // 今日到期數
+          if entry.todayDueCount > 0 {
+            HStack(spacing: 4) {
+              Image(systemName: "clock.fill")
+                .font(.caption2)
+              Text("\(entry.todayDueCount)")
+                .font(.caption2)
+                .fontWeight(.bold)
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Color.orange.opacity(0.8))
+            .cornerRadius(4)
+          }
+          
           Image(systemName: "lightbulb.fill")
             .font(.caption)
             .foregroundColor(.yellow)

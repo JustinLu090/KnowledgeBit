@@ -12,6 +12,12 @@ final class Card {
   
   // Optional relationship to WordSet
   var wordSet: WordSet?
+  
+  // SRS (Spaced Repetition System) 相關欄位
+  @Attribute var srsLevel: Int = 0       // SRS 等級（預設 0）
+  @Attribute var dueAt: Date = Date()    // 下次複習時間（預設現在）
+  var lastReviewedAt: Date?  // 最後複習時間（可選）
+  @Attribute var correctStreak: Int = 0  // 連續答對次數（預設 0）
 
   init(title: String, content: String, wordSet: WordSet? = nil) {
     self.id = UUID()
@@ -20,6 +26,12 @@ final class Card {
     self.isMastered = false
     self.createdAt = Date()
     self.wordSet = wordSet
+    
+    // SRS 預設值
+    self.srsLevel = 0
+    self.dueAt = Date()  // 新卡片立即到期
+    self.lastReviewedAt = nil
+    self.correctStreak = 0
   }
 }
 

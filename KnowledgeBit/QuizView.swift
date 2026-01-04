@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import Combine
 
 struct QuizView: View {
   // Optional: specific cards to quiz (e.g., from a WordSet)
@@ -14,6 +15,8 @@ struct QuizView: View {
   
   @Environment(\.dismiss) var dismiss
   @Environment(\.modelContext) private var modelContext
+  @EnvironmentObject var taskService: TaskService
+  @EnvironmentObject var experienceStore: ExperienceStore
 
   // 2. 測驗狀態
   @State private var currentCardIndex = 0
@@ -24,9 +27,23 @@ struct QuizView: View {
   // 為了不破壞原始順序，我們在出現時把卡片打亂
   @State private var shuffledCards: [Card] = []
   
+  private let srsService = SRSService()
+  
   // Computed property to get cards to use
+  // 優先使用到期卡片，如果沒有到期卡片則使用所有卡片
   private var cardsToUse: [Card] {
-    cards ?? allCards
+    if let specificCards = cards {
+      return specificCards
+    }
+    
+    // 優先取得到期卡片
+    let dueCards = srsService.getDueCards(now: Date(), context: modelContext)
+    if !dueCards.isEmpty {
+      return dueCards
+    }
+    
+    // 如果沒有到期卡片，使用所有卡片
+    return allCards
   }
   
   // Calculate streak using the same logic as StatsView
@@ -68,6 +85,8 @@ struct QuizView: View {
           streakDays: currentStreak,
           onFinish: {
             saveStudyLog()
+            // 完成測驗任務
+            _ = taskService.completeQuizTask(experienceStore: experienceStore)
             dismiss()
           },
           onRetry: {

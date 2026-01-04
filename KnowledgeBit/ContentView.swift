@@ -5,10 +5,13 @@ import SwiftData
 struct ContentView: View {
   @Environment(\.modelContext) private var modelContext
   @EnvironmentObject var experienceStore: ExperienceStore
+  @EnvironmentObject var taskService: TaskService
 
   // 控制新增視窗的開關
   @State private var showingAddCardSheet = false
   @State private var showingSettingsSheet = false
+  
+  private let srsService = SRSService()
 
   var body: some View {
     NavigationStack {
@@ -25,6 +28,14 @@ struct ContentView: View {
           
           // EXP Card Section
           ExpCardView(experienceStore: experienceStore)
+            .padding(.horizontal, 20)
+          
+          // Due Cards Card Section
+          DueCardsCardView()
+            .padding(.horizontal, 20)
+          
+          // Tasks Card Section
+          TasksCardView()
             .padding(.horizontal, 20)
           
           // Daily Quiz Button
@@ -46,6 +57,10 @@ struct ContentView: View {
       }
       .sheet(isPresented: $showingSettingsSheet) {
         SettingsView()
+      }
+      .onAppear {
+        // 更新到期卡片數量
+        srsService.updateDueCountToAppGroup(context: modelContext)
       }
     }
   }
