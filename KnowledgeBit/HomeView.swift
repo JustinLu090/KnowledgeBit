@@ -1,18 +1,18 @@
-// ContentView.swift
+// HomeView.swift
+// Home tab view with streak, level, tasks, and daily quiz
+
 import SwiftUI
 import SwiftData
 
-struct ContentView: View {
+struct HomeView: View {
   @Environment(\.modelContext) private var modelContext
   @EnvironmentObject var experienceStore: ExperienceStore
   @EnvironmentObject var taskService: TaskService
-
-  // 控制新增視窗的開關
+  
   @State private var showingAddCardSheet = false
-  @State private var showingSettingsSheet = false
   
   private let srsService = SRSService()
-
+  
   var body: some View {
     NavigationStack {
       ScrollView {
@@ -23,7 +23,7 @@ struct ContentView: View {
             .padding(.horizontal, 20)
           
           // Streak Card Section
-          StatsView()
+          StreakCardView()
             .padding(.horizontal, 20)
           
           // EXP Card Section
@@ -42,10 +42,6 @@ struct ContentView: View {
           dailyQuizButton
             .padding(.horizontal, 20)
           
-          // Word Set Section
-          wordSetCard
-            .padding(.horizontal, 20)
-          
           // Bottom padding
           Spacer()
             .frame(height: 32)
@@ -54,9 +50,6 @@ struct ContentView: View {
       .background(Color(.systemGroupedBackground))
       .sheet(isPresented: $showingAddCardSheet) {
         AddCardView()
-      }
-      .sheet(isPresented: $showingSettingsSheet) {
-        SettingsView()
       }
       .onAppear {
         // 更新到期卡片數量
@@ -69,18 +62,6 @@ struct ContentView: View {
   
   private var headerSection: some View {
     HStack(alignment: .center) {
-      // Settings button
-      Button(action: { showingSettingsSheet = true }) {
-        Image(systemName: "gearshape.fill")
-          .font(.system(size: 18))
-          .foregroundStyle(.secondary)
-          .frame(width: 36, height: 36)
-          .background(Color(.systemGray6))
-          .clipShape(Circle())
-      }
-      
-      Spacer()
-      
       // App title
       Text("KnowledgeBit")
         .font(.system(size: 28, weight: .bold))
@@ -108,7 +89,7 @@ struct ContentView: View {
           .font(.system(size: 18, weight: .semibold))
           .foregroundStyle(.white)
           .frame(width: 36, height: 36)
-          .background(Color.accentColor)
+          .background(Color.blue)
           .clipShape(Circle())
       }
     }
@@ -127,38 +108,9 @@ struct ContentView: View {
       .foregroundColor(.white)
       .frame(maxWidth: .infinity)
       .frame(height: 56)
-      .background(Color.accentColor)
+      .background(Color.blue)
       .cornerRadius(16)
-    }
-    .buttonStyle(.plain)
-  }
-  
-  // MARK: - Word Set Card
-  
-  private var wordSetCard: some View {
-    NavigationLink {
-      WordSetListView()
-    } label: {
-      HStack(alignment: .center, spacing: 16) {
-        VStack(alignment: .leading, spacing: 4) {
-          Text("單字集")
-            .font(.system(size: 18, weight: .semibold))
-            .foregroundStyle(.primary)
-          
-          Text("管理你的單字集")
-            .font(.system(size: 14))
-            .foregroundStyle(.secondary)
-        }
-        
-        Spacer()
-        
-        Image(systemName: "chevron.right")
-          .font(.system(size: 14, weight: .semibold))
-          .foregroundStyle(.tertiary)
-      }
-      .padding(20)
-      .background(Color(.secondarySystemGroupedBackground))
-      .cornerRadius(16)
+      .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
     }
     .buttonStyle(.plain)
   }

@@ -107,7 +107,7 @@ struct KnowledgeBitApp: App {
   
   var body: some Scene {
     WindowGroup {
-      ContentView()
+      MainTabView()
         .environmentObject(experienceStore)
         .environmentObject(taskService)
     }

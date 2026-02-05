@@ -30,19 +30,24 @@ enum IntensityLevel: Int, CaseIterable {
     }
   }
   
-  /// Get color for this intensity level
+  /// Get color for this intensity level (blue scale - deeper color for more tests)
   var color: Color {
     switch self {
     case .none:
-      return Color(uiColor: .systemGray5)
+      // 0 times: light grey
+      return Color(.systemGray6)
     case .low:
-      return Color.accentColor.opacity(0.3)
+      // 1-2 times: light blue
+      return Color.blue.opacity(0.2)
     case .medium:
-      return Color.accentColor.opacity(0.5)
+      // 3-5 times: medium blue
+      return Color.blue.opacity(0.5)
     case .high:
-      return Color.accentColor.opacity(0.7)
+      // 6-9 times: deep blue
+      return Color.blue.opacity(0.8)
     case .max:
-      return Color.accentColor.opacity(1.0)
+      // 10+ times: full blue (deepest)
+      return Color.blue
     }
   }
 }
@@ -106,9 +111,9 @@ struct WeeklyCalendarView: View {
             .fill(day.intensity.color)
             .frame(width: 26, height: 26)
             .overlay(
-              // Highlight today with a border
+              // Highlight today with a blue border
               Circle()
-                .stroke(Color.accentColor, lineWidth: day.isToday ? 2 : 0)
+                .stroke(Color.blue, lineWidth: day.isToday ? 2 : 0)
             )
           
           // Weekday label
