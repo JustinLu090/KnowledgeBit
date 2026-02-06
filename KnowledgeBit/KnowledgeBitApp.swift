@@ -1,6 +1,7 @@
 // KnowledgeBitApp.swift
 import SwiftUI
 import SwiftData
+import GoogleSignIn
 
 @main
 struct KnowledgeBitApp: App {
@@ -9,15 +10,29 @@ struct KnowledgeBitApp: App {
     let schema = Schema([
       Card.self,
       StudyLog.self,
-      WordSet.self
+      WordSet.self,
+      UserProfile.self
     ])
     
     // 嘗試使用 App Group container，如果失敗則回退到默認容器
     let modelConfiguration: ModelConfiguration
     
-    // 檢查 App Group 是否可用
-    if FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: AppGroup.identifier) != nil {
-      // App Group 可用，使用共享容器
+    // 檢查 App Group 是否可用，並確保目錄存在
+    if let groupURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: AppGroup.identifier) {
+      // App Group 可用，確保 Application Support 目錄存在
+      let appSupportURL = groupURL.appendingPathComponent("Library/Application Support", isDirectory: true)
+      let fileManager = FileManager.default
+      
+      if !fileManager.fileExists(atPath: appSupportURL.path) {
+        do {
+          try fileManager.createDirectory(at: appSupportURL, withIntermediateDirectories: true, attributes: nil)
+          print("✅ Created Application Support directory: \(appSupportURL.path)")
+        } catch {
+          print("⚠️ Failed to create Application Support directory: \(error.localizedDescription)")
+        }
+      }
+      
+      // 使用共享容器
       modelConfiguration = ModelConfiguration(
         schema: schema,
         isStoredInMemoryOnly: false,
@@ -101,17 +116,39 @@ struct KnowledgeBitApp: App {
     createModelContainer()
   }()
 
-  // 建立 ExperienceStore、TaskService、DailyQuestService，供整個 App 使用
+  // 建立 ExperienceStore、TaskService、DailyQuestService、AuthService
   @StateObject private var experienceStore = ExperienceStore()
   @StateObject private var taskService = TaskService()
   @StateObject private var dailyQuestService = DailyQuestService()
+  @StateObject private var authService = AuthService()
   
   var body: some Scene {
     WindowGroup {
-      MainTabView()
-        .environmentObject(experienceStore)
-        .environmentObject(taskService)
-        .environmentObject(dailyQuestService)
+      Group {
+        if authService.isLoggedIn {
+          MainTabView()
+            .environmentObject(experienceStore)
+            .environmentObject(taskService)
+            .environmentObject(dailyQuestService)
+            .environmentObject(authService)
+            .onAppear {
+              // 設置 ExperienceStore 的 authService 引用，以便進行雲端同步
+              experienceStore.authService = authService
+            }
+        } else {
+          LoginView()
+            .environmentObject(authService)
+        }
+      }
+      .animation(.easeInOut(duration: 0.2), value: authService.isLoggedIn)
+      .onOpenURL { url in
+        // 處理 Google Sign-In callback URL
+        GIDSignIn.sharedInstance.handle(url)
+      }
+      .onAppear {
+        // 設置 ExperienceStore 的 authService 引用（在 App 啟動時設置）
+        experienceStore.authService = authService
+      }
     }
     .modelContainer(sharedModelContainer)
   }

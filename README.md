@@ -39,7 +39,7 @@ To solve the sandbox restriction where the Widget Extension cannot access the ma
 let modelConfiguration = ModelConfiguration(
     schema: schema,
     isStoredInMemoryOnly: false,
-    groupContainer: .identifier("group.com.timmychen.KnowledgeBit") // Critical for data sharing
+    groupContainer: .identifier("group.com.KnowledgeBit") // Critical for data sharing
 )
 ```
 

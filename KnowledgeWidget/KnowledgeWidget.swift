@@ -21,8 +21,31 @@ final class WordSet {
   }
 }
 
+// MARK: - UserProfile Forward Declaration
+@Model
+final class UserProfile {
+  @Attribute(.unique) var userId: UUID
+  var displayName: String
+  var avatarData: Data?  // 頭貼圖片資料（儲存在資料庫中）
+  var avatarURL: String?  // Google 頭貼 URL（僅用於遠端載入）
+  var level: Int  // 用戶等級
+  var currentExp: Int  // 當前經驗值
+  var updatedAt: Date
+  
+  init(userId: UUID, displayName: String = "使用者", avatarData: Data? = nil, avatarURL: String? = nil, level: Int = 1, currentExp: Int = 0) {
+    self.userId = userId
+    self.displayName = displayName
+    self.avatarData = avatarData
+    self.avatarURL = avatarURL
+    self.level = level
+    self.currentExp = currentExp
+    self.updatedAt = Date()
+  }
+}
+
 // MARK: - App Group Configuration
-private let sharedAppGroupIdentifier = "group.com.timmychen.KnowledgeBit"
+// 使用統一的 App Group identifier（與主 App 的 AppGroup.identifier 一致）
+private let sharedAppGroupIdentifier = "group.com.KnowledgeBit"
 
 // MARK: - Shared SwiftData Container
 enum KnowledgeBitSharedContainer {
@@ -32,12 +55,26 @@ enum KnowledgeBitSharedContainer {
     let schema = Schema([
       Card.self,
       StudyLog.self,
-      WordSet.self
+      WordSet.self,
+      UserProfile.self
     ])
 
-    guard FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) != nil else {
+    guard let groupURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) else {
       print("⚠️ Widget: App Group not available")
       return nil
+    }
+    
+    // 確保 Application Support 目錄存在
+    let appSupportURL = groupURL.appendingPathComponent("Library/Application Support", isDirectory: true)
+    let fileManager = FileManager.default
+    
+    if !fileManager.fileExists(atPath: appSupportURL.path) {
+      do {
+        try fileManager.createDirectory(at: appSupportURL, withIntermediateDirectories: true, attributes: nil)
+        print("✅ Widget: Created Application Support directory")
+      } catch {
+        print("⚠️ Widget: Failed to create Application Support directory: \(error.localizedDescription)")
+      }
     }
 
     let configuration = ModelConfiguration(

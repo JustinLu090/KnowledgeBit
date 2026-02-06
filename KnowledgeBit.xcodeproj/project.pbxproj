@@ -11,6 +11,8 @@
 		B2E61AFD2EE72E02001370AE /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B2E61AFC2EE72E02001370AE /* SwiftUI.framework */; };
 		B2E61B0A2EE72E03001370AE /* KnowledgeWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B2E61AF82EE72E02001370AE /* KnowledgeWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		B2E61B1D2EE738D4001370AE /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = B2E61B1C2EE738CA001370AE /* README.md */; };
+		BCDEA30E2F35CD640055BF5E /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = B2E61B1F2EE74000001370AE /* Supabase */; };
+		BCDEA30F2F35CD640055BF5E /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = B2E61B222EE75000001370AE /* GoogleSignIn */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -61,12 +63,20 @@
 			);
 			target = B2E61AF72EE72E02001370AE /* KnowledgeWidgetExtension */;
 		};
+		BC6846832F35CAF500E780FB /* Exceptions for "KnowledgeBit" folder in "KnowledgeBit" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = B2E61ADA2EE725F1001370AE /* KnowledgeBit */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		B2E61ADD2EE725F1001370AE /* KnowledgeBit */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
+				BC6846832F35CAF500E780FB /* Exceptions for "KnowledgeBit" folder in "KnowledgeBit" target */,
 				B2E61B112EE72EBC001370AE /* Exceptions for "KnowledgeBit" folder in "KnowledgeWidgetExtension" target */,
 			);
 			path = KnowledgeBit;
@@ -87,6 +97,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BCDEA30F2F35CD640055BF5E /* GoogleSignIn in Frameworks */,
+				BCDEA30E2F35CD640055BF5E /* Supabase in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -154,6 +166,8 @@
 			);
 			name = KnowledgeBit;
 			packageProductDependencies = (
+				B2E61B1F2EE74000001370AE /* Supabase */,
+				B2E61B222EE75000001370AE /* GoogleSignIn */,
 			);
 			productName = KnowledgeBit;
 			productReference = B2E61ADB2EE725F1001370AE /* KnowledgeBit.app */;
@@ -208,6 +222,10 @@
 			);
 			mainGroup = B2E61AD22EE725F1001370AE;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				B2E61B1E2EE74000001370AE /* XCRemoteSwiftPackageReference "supabase-swift" */,
+				B2E61B212EE75000001370AE /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = B2E61ADC2EE725F1001370AE /* Products */;
 			projectDirPath = "";
@@ -394,9 +412,20 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = D984VGGK65;
 				ENABLE_APP_SANDBOX = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = KnowledgeBit/Info.plist;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -412,7 +441,7 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.timmychen.KnowledgeBit;
+				PRODUCT_BUNDLE_IDENTIFIER = com.KnowledgeBit;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
@@ -439,9 +468,20 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = D984VGGK65;
 				ENABLE_APP_SANDBOX = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = KnowledgeBit/Info.plist;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -457,7 +497,7 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.timmychen.KnowledgeBit;
+				PRODUCT_BUNDLE_IDENTIFIER = com.KnowledgeBit;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
@@ -492,7 +532,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.timmychen.KnowledgeBit.Widget;
+				PRODUCT_BUNDLE_IDENTIFIER = com.KnowledgeBit.Widget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -524,7 +564,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.timmychen.KnowledgeBit.Widget;
+				PRODUCT_BUNDLE_IDENTIFIER = com.KnowledgeBit.Widget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -569,6 +609,38 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		B2E61B1E2EE74000001370AE /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.0.0;
+			};
+		};
+		B2E61B212EE75000001370AE /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 7.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		B2E61B1F2EE74000001370AE /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B2E61B1E2EE74000001370AE /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+		B2E61B222EE75000001370AE /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B2E61B212EE75000001370AE /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = B2E61AD32EE725F1001370AE /* Project object */;
 }

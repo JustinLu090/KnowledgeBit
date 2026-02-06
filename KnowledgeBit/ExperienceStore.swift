@@ -10,10 +10,15 @@
 import Foundation
 import SwiftUI
 import Combine
+import Supabase
 
 class ExperienceStore: ObservableObject {
   // App Group UserDefaults
   private let userDefaults: UserDefaults
+  
+  // AuthService 引用（用於雲端同步）
+  // 使用 weak 引用避免循環引用
+  weak var authService: AuthService?
   
   // Published 屬性，UI 會自動更新
   @Published var level: Int {
@@ -110,6 +115,11 @@ class ExperienceStore: ObservableObject {
     } else {
       print("📈 [EXP] 獲得 \(delta) EXP, 當前: \(exp)/\(expToNext) (Level \(level))")
     }
+    
+    // 自動同步到雲端（背景執行，不阻塞 UI）
+    Task {
+      await syncToCloud()
+    }
   }
   
   // 計算 EXP 百分比（0.0 ~ 1.0）
@@ -117,4 +127,50 @@ class ExperienceStore: ObservableObject {
     guard expToNext > 0 else { return 0.0 }
     return min(Double(exp) / Double(expToNext), 1.0)
   }
+  
+  // MARK: - 雲端同步
+  
+  /// 將等級與經驗值同步到 Supabase 雲端
+  /// 使用 upsert 確保資料存在時更新，不存在時插入
+  @MainActor
+  func syncToCloud() async {
+    // 檢查是否有登入
+    guard let authService = authService,
+          authService.isLoggedIn,
+          let userId = authService.currentUserId else {
+      print("⚠️ [Cloud Sync] 未登入或無法取得 user.id，跳過雲端同步")
+      return
+    }
+    
+    let client = authService.getClient()
+    
+    do {
+      // 使用 upsert 將等級與經驗值同步到 user_profiles 表
+      // Supabase 的 upsert 會自動根據 user_id (UNIQUE) 判斷是插入還是更新
+      let payload = ProfileSyncPayload(
+        user_id: userId,
+        level: level,
+        current_exp: exp,
+        updated_at: Date()
+      )
+      
+      _ = try await client
+        .from("user_profiles")
+        .upsert(payload)
+        .execute()
+      
+      print("✅ [Cloud Sync] 成功同步等級與經驗值到雲端 - Level: \(level), EXP: \(exp)")
+    } catch {
+      // 雲端同步失敗不影響本地功能，僅記錄錯誤
+      print("❌ [Cloud Sync] 同步失敗: \(error.localizedDescription)")
+    }
+  }
+}
+
+// MARK: - 雲端同步用 payload（對應 user_profiles 表欄位）
+private struct ProfileSyncPayload: Encodable {
+  let user_id: UUID
+  let level: Int
+  let current_exp: Int
+  let updated_at: Date
 }

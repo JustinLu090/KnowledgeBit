@@ -14,7 +14,7 @@ fi
 # 尋找 App Group 資料夾
 FOUND=false
 for DEVICE_DIR in "$DEVICES_DIR"/*/; do
-    APP_GROUP_DIR="$DEVICE_DIR/data/Containers/Shared/AppGroup/group.com.timmychen.KnowledgeBit"
+    APP_GROUP_DIR="$DEVICE_DIR/data/Containers/Shared/AppGroup/group.com.KnowledgeBit"
     
     if [ -d "$APP_GROUP_DIR" ]; then
         echo "✅ 找到 App Group 資料夾: $APP_GROUP_DIR"
@@ -48,7 +48,7 @@ if [ "$FOUND" = false ]; then
     echo "❌ 找不到 App Group 資料夾"
     echo "請確保："
     echo "1. 已經運行過 App（至少一次）"
-    echo "2. App Group ID 正確：group.com.timmychen.KnowledgeBit"
+    echo "2. App Group ID 正確：group.com.KnowledgeBit"
     echo ""
     echo "或者直接在模擬器/裝置上刪除 App 並重新安裝"
 fi
