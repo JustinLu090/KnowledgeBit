@@ -30,10 +30,6 @@ struct HomeView: View {
           ExpCardView(experienceStore: experienceStore)
             .padding(.horizontal, 20)
           
-          // Due Cards Card Section
-          DueCardsCardView()
-            .padding(.horizontal, 20)
-          
           // Daily Quests Section
           DailyQuestsView()
             .padding(.horizontal, 20)
