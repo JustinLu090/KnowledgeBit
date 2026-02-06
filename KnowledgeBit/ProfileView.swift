@@ -205,21 +205,6 @@ struct ProfileView: View {
         }
         .padding(16)
         .background(Color(.secondarySystemGroupedBackground))
-        
-        Divider()
-          .padding(.leading, 16)
-        
-        HStack {
-          Text("版本資訊")
-            .font(.system(size: 16))
-            .foregroundStyle(.primary)
-          Spacer()
-          Image(systemName: "chevron.right")
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(.tertiary)
-        }
-        .padding(16)
-        .background(Color(.secondarySystemGroupedBackground))
       }
       .cornerRadius(12)
     }

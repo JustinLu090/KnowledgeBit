@@ -44,10 +44,24 @@ class DailyQuestService: ObservableObject {
   private let userDefaults: UserDefaults
   private let questProgressKey = "daily_quest_progress"
   private let questDateKey = "daily_quest_date"
+  private let selectedQuestIndicesKey = "daily_quest_selected_indices" // 儲存今天選中的任務索引
   private let todayCardsKey = "daily_quest_today_cards"
   private let todayExpKey = "daily_quest_today_exp"
   private let todayStudyMinutesKey = "daily_quest_today_study_minutes"
   private let todayWordSetsCompletedKey = "daily_quest_today_word_sets"
+  
+  // 所有可用的任務定義（六個）
+  private let allQuestTitles = [
+    "學習時長 5 分鐘",
+    "完成一本單字集複習",
+    "完成兩本單字集複習",
+    "單字集複習答對率超過 90%",
+    "單字集複習全對",
+    "獲得 30 經驗值"
+  ]
+  private let allQuestTargets = [5, 1, 2, 1, 1, 30]
+  private let allQuestRewards = [20, 15, 25, 15, 20, 10]
+  private let allQuestIcons = ["clock.fill", "book.fill", "books.vertical.fill", "percent", "checkmark.circle.fill", "bolt.fill"]
   
   init() {
     guard let shared = UserDefaults(suiteName: AppGroup.identifier) else {
@@ -67,39 +81,70 @@ class DailyQuestService: ObservableObject {
       // Same day: load saved progress
       loadQuestsFromStorage()
     } else {
-      // New day: reset and save date
+      // New day: reset and save date, randomly select 3 quests
       userDefaults.set(today, forKey: questDateKey)
       userDefaults.set(0, forKey: todayCardsKey)
       userDefaults.set(0, forKey: todayExpKey)
       userDefaults.set(0, forKey: todayStudyMinutesKey)
       userDefaults.set(0, forKey: todayWordSetsCompletedKey)
-      loadQuests()
+      
+      // 隨機選三個任務（基於日期作為種子，確保同一天選出的任務相同）
+      let selectedIndices = selectRandomQuests(for: today)
+      userDefaults.set(selectedIndices, forKey: selectedQuestIndicesKey)
+      
+      loadQuests(selectedIndices: selectedIndices)
       saveQuestsToStorage()
     }
   }
   
-  private func loadQuests() {
-    // 1. 學習時長 5 分鐘 20 Exp  2. 完成一本單字集複習 15 Exp  3. 完成兩本單字集複習 25 Exp
-    // 4. 單字集複習答對率超過 90% 15 Exp  5. 單字集複習全對 20 Exp  6. 獲得 30 經驗值 10 Exp
-    let titles = [
-      "學習時長 5 分鐘",
-      "完成一本單字集複習",
-      "完成兩本單字集複習",
-      "單字集複習答對率超過 90%",
-      "單字集複習全對",
-      "獲得 30 經驗值"
-    ]
-    let targets = [5, 1, 2, 1, 1, 30]
-    let rewards = [20, 15, 25, 15, 20, 10]
-    let icons = ["clock.fill", "book.fill", "books.vertical.fill", "percent", "checkmark.circle.fill", "bolt.fill"]
+  /// 基於日期隨機選出三個任務（同一天會選出相同的任務）
+  private func selectRandomQuests(for date: Date) -> [Int] {
+    // 使用日期的時間戳作為隨機種子，確保同一天選出的任務相同
+    let seed = Int(date.timeIntervalSince1970 / 86400) // 除以86400得到天數
+    var generator = SeededRandomNumberGenerator(seed: seed)
     
-    quests = (0..<6).map { i in
+    // 從 0-5 中隨機選出 3 個不重複的索引
+    var indices = Array(0..<6)
+    indices.shuffle(using: &generator)
+    return Array(indices.prefix(3)).sorted()
+  }
+  
+  /// 自定義隨機數生成器（基於種子）
+  private struct SeededRandomNumberGenerator: RandomNumberGenerator {
+    var state: UInt64
+    
+    init(seed: Int) {
+      state = UInt64(seed)
+    }
+    
+    mutating func next() -> UInt64 {
+      state = state &* 1103515245 &+ 12345
+      return state
+    }
+  }
+  
+  private func loadQuests(selectedIndices: [Int]? = nil) {
+    // 如果沒有提供選中的索引，從 UserDefaults 讀取
+    let indices: [Int]
+    if let provided = selectedIndices {
+      indices = provided
+    } else if let saved = userDefaults.array(forKey: selectedQuestIndicesKey) as? [Int] {
+      indices = saved
+    } else {
+      // 如果都沒有，使用今天的日期重新選
+      let today = Calendar.current.startOfDay(for: Date())
+      indices = selectRandomQuests(for: today)
+      userDefaults.set(indices, forKey: selectedQuestIndicesKey)
+    }
+    
+    // 只加載選中的三個任務
+    quests = indices.map { i in
       DailyQuest(
-        title: titles[i],
-        targetValue: targets[i],
+        title: allQuestTitles[i],
+        targetValue: allQuestTargets[i],
         currentProgress: 0,
-        rewardExp: rewards[i],
-        iconName: icons[i]
+        rewardExp: allQuestRewards[i],
+        iconName: allQuestIcons[i]
       )
     }
   }
@@ -111,7 +156,7 @@ class DailyQuestService: ObservableObject {
     
     loadQuests()
     
-    // Restore progress from today's totals
+    // Restore progress from today's totals（只恢復今天選中的任務）
     if let idx = quests.firstIndex(where: { $0.title == "學習時長 5 分鐘" }) {
       quests[idx].updateProgress(min(todayMinutes, 5))
     }
@@ -278,7 +323,13 @@ class DailyQuestService: ObservableObject {
     userDefaults.set(0, forKey: todayExpKey)
     userDefaults.set(0, forKey: todayStudyMinutesKey)
     userDefaults.set(0, forKey: todayWordSetsCompletedKey)
-    loadQuests()
+    
+    // 重新隨機選三個任務
+    let today = Calendar.current.startOfDay(for: Date())
+    let selectedIndices = selectRandomQuests(for: today)
+    userDefaults.set(selectedIndices, forKey: selectedQuestIndicesKey)
+    
+    loadQuests(selectedIndices: selectedIndices)
     saveQuestsToStorage()
   }
   

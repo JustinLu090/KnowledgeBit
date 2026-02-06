@@ -93,8 +93,6 @@ class SRSService {
       WidgetCenter.shared.reloadAllTimelines()
     }
     #endif
-    
-    print("📊 [SRS] 更新到期卡片數: \(dueCount)")
   }
   
   // MARK: - 取得今日到期卡片數量
