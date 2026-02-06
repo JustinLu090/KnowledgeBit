@@ -74,7 +74,7 @@ class TaskService: ObservableObject {
   }
   
   // MARK: - 完成複習任務
-  // 任務 A：完成 1 次複習 session（至少 10 張）→ +30 EXP
+  // 僅標記完成，不再給予 EXP（經驗值只來自：今日任務・測驗 20、完成三張卡片 10、精準打擊 20）
   func completeReviewTask(reviewCount: Int, experienceStore: ExperienceStore) -> Bool {
     guard reviewCount >= 10 else {
       print("⚠️ [Task] 複習任務未完成：需要至少 10 張，目前 \(reviewCount) 張")
@@ -87,15 +87,12 @@ class TaskService: ObservableObject {
       return false
     }
     
-    // 標記為完成
+    // 標記為完成（不發放 EXP）
     let today = Date()
     userDefaults.set(today, forKey: "task_review_done_date")
     reviewTaskDone = true
     
-    // 給予 EXP
-    experienceStore.addExp(delta: 30)
-    
-    print("✅ [Task] 完成複習任務！獲得 30 EXP")
+    print("✅ [Task] 完成複習任務（無 EXP）")
     return true
   }
   

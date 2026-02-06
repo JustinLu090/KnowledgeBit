@@ -101,15 +101,17 @@ struct KnowledgeBitApp: App {
     createModelContainer()
   }()
 
-  // 建立 ExperienceStore singleton，供整個 App 使用
+  // 建立 ExperienceStore、TaskService、DailyQuestService，供整個 App 使用
   @StateObject private var experienceStore = ExperienceStore()
   @StateObject private var taskService = TaskService()
+  @StateObject private var dailyQuestService = DailyQuestService()
   
   var body: some Scene {
     WindowGroup {
       MainTabView()
         .environmentObject(experienceStore)
         .environmentObject(taskService)
+        .environmentObject(dailyQuestService)
     }
     .modelContainer(sharedModelContainer)
   }

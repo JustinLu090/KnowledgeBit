@@ -34,8 +34,8 @@ struct HomeView: View {
           DueCardsCardView()
             .padding(.horizontal, 20)
           
-          // Tasks Card Section
-          TasksCardView()
+          // Daily Quests Section
+          DailyQuestsView()
             .padding(.horizontal, 20)
           
           // Daily Quiz Button

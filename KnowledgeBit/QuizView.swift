@@ -17,6 +17,7 @@ struct QuizView: View {
   @Environment(\.modelContext) private var modelContext
   @EnvironmentObject var taskService: TaskService
   @EnvironmentObject var experienceStore: ExperienceStore
+  @EnvironmentObject var questService: DailyQuestService
 
   // 2. 測驗狀態
   @State private var currentCardIndex = 0
@@ -85,8 +86,15 @@ struct QuizView: View {
           streakDays: currentStreak,
           onFinish: {
             saveStudyLog()
-            // 完成測驗任務
-            _ = taskService.completeQuizTask(experienceStore: experienceStore)
+            // 每日任務：完成三張卡片（本輪測驗張數）
+            questService.recordCardsCompletedToday(shuffledCards.count, experienceStore: experienceStore)
+            // 每日任務：精準打擊（正確率 >= 90%）
+            let accuracy = shuffledCards.isEmpty ? 0 : (score * 100 / shuffledCards.count)
+            questService.recordQuizAccuracy(accuracyPercent: accuracy, experienceStore: experienceStore)
+            // 完成測驗任務（若達成會給 20 EXP，需計入經驗獵人）
+            if taskService.completeQuizTask(experienceStore: experienceStore) {
+              questService.recordExpGainedToday(20, experienceStore: experienceStore)
+            }
             dismiss()
           },
           onRetry: {

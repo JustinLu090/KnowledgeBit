@@ -54,6 +54,11 @@ struct ExpCardView: View {
           .progressViewStyle(.linear)
           .tint(.blue)
           .scaleEffect(x: 1, y: 1.5, anchor: .center) // 讓進度條稍微高一點
+        
+        // 獲得 EXP 方式說明（與實際發放規則一致）
+        Text("完成每日測驗、完成三張卡片、精準打擊可獲得 EXP")
+          .font(.caption2)
+          .foregroundStyle(.tertiary)
       }
     }
     .padding(20)

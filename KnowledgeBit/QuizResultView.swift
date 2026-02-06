@@ -8,6 +8,7 @@ struct QuizResultView: View {
   let onRetry: () -> Void
   
   @EnvironmentObject var experienceStore: ExperienceStore
+  @EnvironmentObject var questService: DailyQuestService
   
   @State private var trophyScale: CGFloat = 0.5
   @State private var showContent: Bool = false
@@ -213,33 +214,9 @@ struct QuizResultView: View {
     }
   }
   
-  // 計算並給予 EXP
-  // 規則：至少 +10；每答對一題 +5
+  // 測驗結算不再給予 EXP（僅保留：今日任務・測驗 20、完成三張卡片 10、精準打擊 20）
   private func grantExperience() {
-    guard totalCards > 0 else {
-      print("⚠️ [EXP] 無法給予 EXP：totalCards = 0")
-      return
-    }
-    
-    // 基礎 EXP：至少 10
-    let baseExp = 10
-    
-    // 每答對一題 +5
-    let correctBonus = rememberedCards * 5
-    
-    // 總 EXP
-    let totalExp = baseExp + correctBonus
-    
-    let oldLevel = experienceStore.level
-    let oldExp = experienceStore.exp
-    
-    // 給予 EXP
-    experienceStore.addExp(delta: totalExp)
-    
-    // Debug 輸出
-    print("🎯 [EXP] 測驗結算 - 答對: \(rememberedCards)/\(totalCards), 獲得: \(totalExp) EXP")
-    print("🎯 [EXP] 等級變化: \(oldLevel) → \(experienceStore.level)")
-    print("🎯 [EXP] EXP 變化: \(oldExp) → \(experienceStore.exp)/\(experienceStore.expToNext)")
+    // 背一張卡片／測驗答對題數不再給分，此處不發放 EXP
   }
 }
 
@@ -253,5 +230,6 @@ struct QuizResultView: View {
     onRetry: {}
   )
   .environmentObject(ExperienceStore())
+  .environmentObject(DailyQuestService())
 }
 

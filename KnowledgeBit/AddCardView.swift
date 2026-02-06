@@ -27,7 +27,7 @@ struct AddCardView: View {
     NavigationStack {
       Form {
         Section(header: Text("基本資訊")) {
-          TextField("標題 (例如: TCP)", text: $title)
+          TextField("標題 (例如：Knowledge)", text: $title)
         }
         
         Section(header: Text("單字集")) {

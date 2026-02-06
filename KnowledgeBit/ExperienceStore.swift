@@ -1,6 +1,11 @@
 // ExperienceStore.swift
 // 統一管理使用者經驗值與等級的 ObservableObject
 // 使用 App Group UserDefaults 儲存，確保主 App 與 Widget 共用資料
+//
+// 經驗值僅由以下三種方式獲得（皆透過 addExp 累積，滿額即晉級）：
+// 1. 今日任務・測驗：完成一次每日測驗 → +20 EXP
+// 2. 每日任務・完成三張卡片：今日完成 3 張 → +10 EXP
+// 3. 每日任務・精準打擊：單次測驗正確率 ≥90% → +20 EXP
 
 import Foundation
 import SwiftUI

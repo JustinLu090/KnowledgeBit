@@ -9,6 +9,7 @@ struct ReviewSessionView: View {
   @Environment(\.dismiss) var dismiss
   @EnvironmentObject var experienceStore: ExperienceStore
   @EnvironmentObject var taskService: TaskService
+  @EnvironmentObject var questService: DailyQuestService
   
   @State private var currentCardIndex = 0
   @State private var isFlipped = false
@@ -212,7 +213,10 @@ struct ReviewSessionView: View {
         // 所有卡片都複習完畢
         showResult = true
         
-        // 檢查並完成複習任務
+        // 每日任務：完成三張卡片（本輪複習張數）
+        questService.recordCardsCompletedToday(reviewedCount, experienceStore: experienceStore)
+        
+        // 複習任務僅標記完成，不再發放 EXP
         _ = taskService.completeReviewTask(reviewCount: reviewedCount, experienceStore: experienceStore)
         
         // 更新到期卡片數量
@@ -227,5 +231,6 @@ struct ReviewSessionView: View {
   ReviewSessionView()
     .environmentObject(ExperienceStore())
     .environmentObject(TaskService())
+    .environmentObject(DailyQuestService())
     .modelContainer(for: Card.self, inMemory: true)
 }
