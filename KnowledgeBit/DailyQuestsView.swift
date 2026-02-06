@@ -82,7 +82,7 @@ struct QuestCardView: View {
       if quest.isCompleted {
         Image(systemName: "checkmark.circle.fill")
           .font(.system(size: 24))
-          .foregroundStyle(.blue)
+          .foregroundStyle(.green)
       } else {
         VStack(spacing: 2) {
           Text("+\(quest.rewardExp)")

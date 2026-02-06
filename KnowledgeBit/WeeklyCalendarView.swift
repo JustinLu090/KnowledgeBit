@@ -55,8 +55,9 @@ enum IntensityLevel: Int, CaseIterable {
 // MARK: - Day Study Summary
 
 /// Represents one day's study activity summary
+/// Uses date as stable id to avoid unnecessary view recreation (memory/performance).
 struct DayStudySummary: Identifiable {
-  let id = UUID()
+  var id: TimeInterval { date.timeIntervalSince1970 }
   let date: Date
   let totalCards: Int
   let didStudy: Bool

@@ -4,72 +4,35 @@
 import Foundation
 
 /*
- Usage Examples:
- 
- // 1. Update "完成三張卡片" quest when user reviews cards
- func onCardReviewed() {
-   let questService = DailyQuestService()
-   let currentProgress = getReviewedCardCount() // Your function to get count
-   questService.updateProgress(title: "完成三張卡片", progress: currentProgress)
-   
-   if questService.quests.first(where: { $0.title == "完成三張卡片" })?.isCompleted == true {
-     experienceStore.addExp(delta: 10)
-   }
- }
- 
- // 2. Update "精準打擊" quest when quiz is completed with high accuracy
- func onQuizCompleted(accuracy: Double) {
-   let questService = DailyQuestService()
-   if accuracy >= 0.9 {
-     questService.updateProgress(title: "精準打擊", progress: 1)
-     experienceStore.addExp(delta: 20)
-   }
- }
- 
- // 3. Update "學習長跑" quest based on study time
- func onStudyTimeUpdated(minutes: Int) {
-   let questService = DailyQuestService()
-   questService.updateProgress(title: "學習長跑", progress: minutes)
-   
-   if let quest = questService.quests.first(where: { $0.title == "學習長跑" }),
-      quest.isCompleted {
-     experienceStore.addExp(delta: 15)
-   }
- }
- 
- // 4. Update "經驗獵人" quest when EXP is gained
- func onExpGained(amount: Int) {
-   let questService = DailyQuestService()
-   let currentTotalExp = experienceStore.exp
-   questService.updateProgress(title: "經驗獵人", progress: currentTotalExp)
-   
-   if let quest = questService.quests.first(where: { $0.title == "經驗獵人" }),
-      quest.isCompleted {
-     experienceStore.addExp(delta: 30)
-   }
- }
+ 每日任務（六項）與對應 API：
+ 1. 學習時長 5 分鐘 20 Exp → questService.recordStudyMinutes(minutes, experienceStore:)
+ 2. 完成一本單字集複習 15 Exp → questService.recordWordSetCompleted(experienceStore:)
+ 3. 完成兩本單字集複習 25 Exp → 同上，完成第二本時再呼叫一次
+ 4. 單字集複習答對率超過 90% 15 Exp → questService.recordWordSetQuizResult(accuracyPercent:isPerfect:experienceStore:)
+ 5. 單字集複習全對 20 Exp → 同上
+ 6. 獲得 30 經驗值 10 Exp → questService.recordExpGainedToday(amount, experienceStore:)
  */
 
 extension DailyQuestService {
-  /// Convenience method to update quest progress by type
+  /// Convenience method to update quest progress by type（需傳入 experienceStore 以發放 EXP）
   enum QuestType {
-    case completeCards(count: Int)
-    case accurateStrike(achieved: Bool)
-    case studyMarathon(minutes: Int)
-    case expHunter(totalExp: Int)
+    case studyMinutes(Int)
+    case wordSetCompleted
+    case wordSetQuizResult(accuracyPercent: Int, isPerfect: Bool)
+    case expGained(Int)
   }
   
-  /// Update quest progress by type
-  func updateQuest(_ type: QuestType) {
+  /// Update quest progress by type；完成時會自動發放對應 EXP
+  func updateQuest(_ type: QuestType, experienceStore: ExperienceStore) {
     switch type {
-    case .completeCards(let count):
-      updateProgress(title: "完成三張卡片", progress: count)
-    case .accurateStrike(let achieved):
-      updateProgress(title: "精準打擊", progress: achieved ? 1 : 0)
-    case .studyMarathon(let minutes):
-      updateProgress(title: "學習長跑", progress: minutes)
-    case .expHunter(let totalExp):
-      updateProgress(title: "經驗獵人", progress: totalExp)
+    case .studyMinutes(let minutes):
+      recordStudyMinutes(minutes, experienceStore: experienceStore)
+    case .wordSetCompleted:
+      recordWordSetCompleted(experienceStore: experienceStore)
+    case .wordSetQuizResult(let accuracyPercent, let isPerfect):
+      recordWordSetQuizResult(accuracyPercent: accuracyPercent, isPerfect: isPerfect, experienceStore: experienceStore)
+    case .expGained(let amount):
+      recordExpGainedToday(amount, experienceStore: experienceStore)
     }
   }
 }

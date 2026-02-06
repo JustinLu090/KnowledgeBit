@@ -213,9 +213,6 @@ struct ReviewSessionView: View {
         // 所有卡片都複習完畢
         showResult = true
         
-        // 每日任務：完成三張卡片（本輪複習張數）
-        questService.recordCardsCompletedToday(reviewedCount, experienceStore: experienceStore)
-        
         // 複習任務僅標記完成，不再發放 EXP
         _ = taskService.completeReviewTask(reviewCount: reviewedCount, experienceStore: experienceStore)
         

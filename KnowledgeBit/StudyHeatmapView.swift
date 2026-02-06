@@ -9,8 +9,9 @@ import Foundation
 // MARK: - Heatmap Data Model
 
 /// Represents one day's study activity for the heatmap
+/// Uses date as stable id to avoid unnecessary view recreation (memory/performance).
 struct HeatmapDay: Identifiable {
-  let id = UUID()
+  var id: TimeInterval { date.timeIntervalSince1970 }
   let date: Date
   let count: Int  // Number of quizzes/tests taken on this day
   let level: HeatmapLevel
@@ -25,8 +26,9 @@ struct HeatmapDay: Identifiable {
 }
 
 /// Represents a month block with its weeks and days
+/// Uses year+month as stable id to avoid unnecessary view recreation (memory/performance).
 struct MonthBlock: Identifiable {
-  let id = UUID()
+  var id: String { "\(year)-\(monthIndex)" }
   let monthName: String
   let monthIndex: Int
   let year: Int
@@ -262,12 +264,14 @@ struct StudyHeatmapView: View {
         .padding(.trailing, 20)
       }
       .onAppear {
-        scrollToLatest(proxy: proxy)
+        let lastId = monthBlocks.last?.id
+        scrollToLatest(proxy: proxy, lastMonthId: lastId)
       }
       .onChange(of: selectedYear) { _, _ in
-        // Scroll to latest when year changes
+        // Scroll to latest when year changes; pass id to avoid capturing self in async
+        let lastId = monthBlocks.last?.id
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-          scrollToLatest(proxy: proxy)
+          scrollToLatest(proxy: proxy, lastMonthId: lastId)
         }
       }
     }
@@ -366,18 +370,22 @@ struct StudyHeatmapView: View {
   
   // MARK: - Data Processing
   
-  /// Count study records for a specific date
-  /// Efficient helper function to count quizzes/tests for a given date
+  /// Pre-aggregate logs by calendar day (one pass) to avoid O(days × logs) in heatmapData.
+  private var logsByDate: [Date: Int] {
+    let calendar = Calendar.current
+    var dict: [Date: Int] = [:]
+    for log in logs {
+      let day = calendar.startOfDay(for: log.date)
+      dict[day, default: 0] += log.cardsReviewed
+    }
+    return dict
+  }
+  
+  /// Count study records for a specific date (O(1) lookup after logsByDate).
   func countForDate(_ date: Date) -> Int {
     let calendar = Calendar.current
     let targetDate = calendar.startOfDay(for: date)
-    
-    return logs
-      .filter { log in
-        let logDate = calendar.startOfDay(for: log.date)
-        return logDate == targetDate
-      }
-      .reduce(0) { $0 + $1.cardsReviewed }
+    return logsByDate[targetDate] ?? 0
   }
   
   // MARK: - Computed Properties
@@ -570,14 +578,13 @@ struct StudyHeatmapView: View {
   
   // MARK: - Helper Methods
   
-  /// Scroll to the latest date (rightmost position - latest month)
-  private func scrollToLatest(proxy: ScrollViewProxy) {
+  /// Scroll to the latest date (rightmost position - latest month).
+  /// Takes lastMonthId to avoid capturing self in async block (reduces retain risk).
+  private func scrollToLatest(proxy: ScrollViewProxy, lastMonthId: String?) {
+    guard let lastMonthId = lastMonthId else { return }
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
       withAnimation(.easeOut(duration: 0.5)) {
-        // Scroll to the last month block (rightmost)
-        if let lastMonth = monthBlocks.last {
-          proxy.scrollTo(lastMonth.id, anchor: UnitPoint.trailing)
-        }
+        proxy.scrollTo(lastMonthId, anchor: UnitPoint.trailing)
       }
     }
   }
