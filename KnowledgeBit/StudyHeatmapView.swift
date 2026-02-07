@@ -14,13 +14,13 @@ struct HeatmapDay: Identifiable {
   var id: TimeInterval { date.timeIntervalSince1970 }
   let date: Date
   let count: Int  // Number of quizzes/tests taken on this day
-  let level: HeatmapLevel
+  let level: StudyIntensityLevel
   let isEmpty: Bool  // True if this is a placeholder cell
   
   init(date: Date, count: Int, isEmpty: Bool = false) {
     self.date = date
     self.count = count
-    self.level = HeatmapLevel.from(count: count)
+    self.level = StudyIntensityLevel.from(cardCount: count)
     self.isEmpty = isEmpty
   }
 }
@@ -33,49 +33,6 @@ struct MonthBlock: Identifiable {
   let monthIndex: Int
   let year: Int
   let weeks: [[HeatmapDay]]  // Each inner array represents a week (7 days)
-}
-
-// MARK: - Heatmap Level (Blue Scale)
-
-/// Visual intensity level based on quiz count (blue scale)
-enum HeatmapLevel: Int, CaseIterable {
-  case level0 = 0  // 0 times
-  case level1 = 1  // 1-2 times
-  case level2 = 2  // 3-5 times
-  case level3 = 3  // 6-9 times
-  case level4 = 4  // 10+ times
-  
-  /// Map quiz count to intensity level
-  static func from(count: Int) -> HeatmapLevel {
-    switch count {
-    case 0:
-      return .level0
-    case 1...2:
-      return .level1
-    case 3...5:
-      return .level2
-    case 6...9:
-      return .level3
-    default:
-      return .level4
-    }
-  }
-  
-  /// Get color for this intensity level (blue scale)
-  func color() -> Color {
-    switch self {
-    case .level0:
-      return Color(.systemGray6)
-    case .level1:
-      return Color.blue.opacity(0.2)
-    case .level2:
-      return Color.blue.opacity(0.5)
-    case .level3:
-      return Color.blue.opacity(0.8)
-    case .level4:
-      return Color.blue
-    }
-  }
 }
 
 // MARK: - Year Selection
@@ -306,7 +263,7 @@ struct StudyHeatmapView: View {
   private func heatmapCell(day: HeatmapDay) -> some View {
     ZStack(alignment: .top) {
       RoundedRectangle(cornerRadius: 2)
-        .fill(day.level.color())
+        .fill(day.level.color)
         .frame(width: cellSize, height: cellSize)
       
       // Tooltip overlay (positioned above the cell)
@@ -334,7 +291,9 @@ struct StudyHeatmapView: View {
   
   private func tooltipView(day: HeatmapDay) -> some View {
     let formatter = DateFormatter()
-    formatter.dateFormat = "yyyy-MM-dd"
+    formatter.timeZone = TimeZone.current
+    formatter.locale = Locale.current
+    formatter.dateStyle = .medium
     let dateString = formatter.string(from: day.date)
     
     return VStack(spacing: 0) {
@@ -421,6 +380,7 @@ struct StudyHeatmapView: View {
     var monthBlocks: [MonthBlock] = []
     
     let formatter = DateFormatter()
+    formatter.timeZone = TimeZone.current
     formatter.locale = Locale.current
     formatter.dateFormat = "MMM"
     

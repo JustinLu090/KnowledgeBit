@@ -6,7 +6,6 @@ import SwiftData
 
 struct DueCardsCardView: View {
   @Environment(\.modelContext) private var modelContext
-  @Query(sort: \Card.dueAt, order: .forward) private var allCards: [Card]
   
   private let srsService = SRSService()
   
@@ -51,9 +50,7 @@ struct DueCardsCardView: View {
           .font(.system(size: 14, weight: .semibold))
           .foregroundStyle(.tertiary)
       }
-      .padding(20)
-      .background(Color(.secondarySystemGroupedBackground))
-      .cornerRadius(16)
+      .cardStyle()
     }
     .buttonStyle(.plain)
   }

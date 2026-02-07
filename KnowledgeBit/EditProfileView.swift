@@ -34,50 +34,13 @@ struct EditProfileView: View {
     NavigationStack {
       Form {
         Section {
-          // 頭貼選擇
-          VStack(spacing: 16) {
-            if let avatarImage = avatarImage {
-              Image(uiImage: avatarImage)
-                .resizable()
-                .aspectRatio(contentMode: .fill)
-                .frame(width: 120, height: 120)
-                .clipShape(Circle())
-            } else if let avatarURL = currentProfile?.avatarURL, avatarURL.hasPrefix("http"), let url = URL(string: avatarURL) {
-              AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                  image
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                case .failure, .empty:
-                  defaultAvatar
-                @unknown default:
-                  defaultAvatar
-                }
-              }
-              .frame(width: 120, height: 120)
-              .clipShape(Circle())
-            } else {
-              defaultAvatar
-            }
-            
-            PhotosPicker(selection: $selectedPhoto, matching: .images) {
-              Text("選擇頭貼")
-                .font(.subheadline)
-                .foregroundStyle(.blue)
-            }
-            .onChange(of: selectedPhoto) { _, newItem in
-              Task {
-                if let data = try? await newItem?.loadTransferable(type: Data.self),
-                   let image = UIImage(data: data) {
-                  avatarImage = image
-                  // 圖片會儲存為 Data 到資料庫，不需要檔案路徑
-                }
-              }
-            }
-          }
-          .frame(maxWidth: .infinity)
-          .padding(.vertical, 8)
+          AvatarPickerSection(
+            avatarImage: $avatarImage,
+            selectedPhoto: $selectedPhoto,
+            avatarURL: currentProfile?.avatarURL,
+            avatarData: currentProfile?.avatarData,
+            size: 120
+          )
         }
         
         Section {
@@ -102,23 +65,6 @@ struct EditProfileView: View {
         }
       }
     }
-  }
-  
-  private var defaultAvatar: some View {
-    Circle()
-      .fill(
-        LinearGradient(
-          colors: [.blue, .purple],
-          startPoint: .topLeading,
-          endPoint: .bottomTrailing
-        )
-      )
-      .frame(width: 120, height: 120)
-      .overlay {
-        Image(systemName: "person.fill")
-          .font(.system(size: 60))
-          .foregroundStyle(.white)
-      }
   }
   
   private func saveProfile() {

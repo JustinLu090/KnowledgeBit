@@ -56,9 +56,7 @@ struct ExpCardView: View {
           .scaleEffect(x: 1, y: 1.5, anchor: .center) // 讓進度條稍微高一點
       }
     }
-    .padding(20)
-    .background(Color(.secondarySystemGroupedBackground))
-    .cornerRadius(16)
+    .cardStyle()
   }
 }
 

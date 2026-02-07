@@ -19,7 +19,7 @@ struct StreakCardView: View {
           Text("連續學習")
             .font(.caption)
             .foregroundStyle(.secondary)
-          Text("\(calculateStreak()) 天")
+          Text("\(logs.currentStreak()) 天")
             .font(.title2)
             .bold()
         }
@@ -29,41 +29,7 @@ struct StreakCardView: View {
       // 2. Weekly calendar strip (過去 7 天)
       WeeklyCalendarView(days: weeklySummaries)
     }
-    .padding(20)
-    .background(Color(.secondarySystemGroupedBackground))
-    .cornerRadius(16)
-    .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
-  }
-
-  /// 計算真正的連續學習天數
-  /// 從今天開始往前計算，直到遇到沒有學習記錄的日子為止
-  func calculateStreak() -> Int {
-    guard !logs.isEmpty else { return 0 }
-    
-    let calendar = Calendar.current
-    let today = calendar.startOfDay(for: Date())
-    
-    // 將所有學習記錄按日期分組（同一天的多筆記錄只算一天）
-    var studyDates = Set<Date>()
-    for log in logs {
-      let logDate = calendar.startOfDay(for: log.date)
-      studyDates.insert(logDate)
-    }
-    
-    // 從今天開始往前計算連續天數
-    var streak = 0
-    var currentDate = today
-    
-    while studyDates.contains(currentDate) {
-      streak += 1
-      // 往前一天
-      guard let previousDate = calendar.date(byAdding: .day, value: -1, to: currentDate) else {
-        break
-      }
-      currentDate = previousDate
-    }
-    
-    return streak
+    .cardStyle(withShadow: true)
   }
 
   /// Generate weekly summaries for the past 7 days (rolling window from 6 days ago to today)

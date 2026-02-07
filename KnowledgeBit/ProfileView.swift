@@ -10,7 +10,6 @@ struct ProfileView: View {
   @Query private var userProfiles: [UserProfile]
   @State private var showingSettingsSheet = false
   @State private var showingEditProfileSheet = false
-  @State private var avatarImage: UIImage?
   
   var body: some View {
     NavigationStack {
@@ -49,40 +48,11 @@ struct ProfileView: View {
     let displayName = currentProfile?.displayName ?? authService.currentUserDisplayName ?? "使用者"
     
     return VStack(spacing: 16) {
-      // Avatar
-      Group {
-        // 優先使用資料庫中的圖片資料
-        if let avatarData = currentProfile?.avatarData, let image = UIImage(data: avatarData) {
-          Image(uiImage: image)
-            .resizable()
-            .aspectRatio(contentMode: .fill)
-            .frame(width: 100, height: 100)
-            .clipShape(Circle())
-        }
-        // 其次使用遠端 URL（Google 頭貼）
-        else if let avatarURL = currentProfile?.avatarURL ?? authService.currentUserAvatarURL,
-                avatarURL.hasPrefix("http"),
-                let url = URL(string: avatarURL) {
-          AsyncImage(url: url) { phase in
-            switch phase {
-            case .empty:
-              defaultAvatar
-            case .success(let image):
-              image
-                .resizable()
-                .aspectRatio(contentMode: .fill)
-                .frame(width: 100, height: 100)
-                .clipShape(Circle())
-            case .failure:
-              defaultAvatar
-            @unknown default:
-              defaultAvatar
-            }
-          }
-        } else {
-          defaultAvatar
-        }
-      }
+      AvatarView(
+        avatarData: currentProfile?.avatarData,
+        avatarURL: currentProfile?.avatarURL ?? authService.currentUserAvatarURL,
+        size: 100
+      )
       .shadow(color: .blue.opacity(0.3), radius: 10, x: 0, y: 5)
       
       // Name
@@ -108,23 +78,6 @@ struct ProfileView: View {
         try? modelContext.save()
       }
     }
-  }
-  
-  private var defaultAvatar: some View {
-    Circle()
-      .fill(
-        LinearGradient(
-          colors: [.blue, .purple],
-          startPoint: .topLeading,
-          endPoint: .bottomTrailing
-        )
-      )
-      .frame(width: 100, height: 100)
-      .overlay {
-        Image(systemName: "person.fill")
-          .font(.system(size: 50))
-          .foregroundStyle(.white)
-      }
   }
   
   // MARK: - Settings Section

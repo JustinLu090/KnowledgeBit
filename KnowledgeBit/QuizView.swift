@@ -47,34 +47,7 @@ struct QuizView: View {
     return allCards
   }
   
-  // Calculate streak using the same logic as StatsView
-  private var currentStreak: Int {
-    guard !logs.isEmpty else { return 0 }
-    
-    let calendar = Calendar.current
-    let today = calendar.startOfDay(for: Date())
-    
-    // Group study dates (multiple logs on same day count as one day)
-    var studyDates = Set<Date>()
-    for log in logs {
-      let logDate = calendar.startOfDay(for: log.date)
-      studyDates.insert(logDate)
-    }
-    
-    // Calculate consecutive days from today backwards
-    var streak = 0
-    var currentDate = today
-    
-    while studyDates.contains(currentDate) {
-      streak += 1
-      guard let previousDate = calendar.date(byAdding: .day, value: -1, to: currentDate) else {
-        break
-      }
-      currentDate = previousDate
-    }
-    
-    return streak
-  }
+  private var currentStreak: Int { logs.currentStreak() }
 
   var body: some View {
     Group {
@@ -168,14 +141,12 @@ struct QuizView: View {
   }
 
   func saveStudyLog() {
-    let today = Date()
-    // 建立一筆新紀錄
+    // 使用當地時區的「當日開始」作為打卡日期，避免 UTC 與當地時間差
+    let calendar = Calendar.current
+    let today = calendar.startOfDay(for: Date())
     let log = StudyLog(date: today, cardsReviewed: score)
-    // 插入資料庫
     modelContext.insert(log)
     try? modelContext.save()
-
-    print("已儲存打卡紀錄：\(today)")
   }
 
   // 切換下一張邏輯

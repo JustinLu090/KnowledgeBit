@@ -36,9 +36,7 @@ struct TasksCardView: View {
         )
       }
     }
-    .padding(20)
-    .background(Color(.secondarySystemGroupedBackground))
-    .cornerRadius(16)
+    .cardStyle()
   }
 }
 
