@@ -1,6 +1,7 @@
 // Card.swift
 import Foundation
 import SwiftData
+import Combine
 
 @Model
 final class Card {
@@ -39,11 +40,13 @@ final class Card {
 final class StudyLog {
   var id: UUID
   var date: Date          // 打卡日期
-  var cardsReviewed: Int  // 今天複習了幾張
+  var cardsReviewed: Int  // 該次測驗答對數（記住的張數）
+  var totalCards: Int     // 該次測驗總張數（用於計算正確率）
 
-  init(date: Date, cardsReviewed: Int) {
+  init(date: Date, cardsReviewed: Int, totalCards: Int = 0) {
     self.id = UUID()
     self.date = date
     self.cardsReviewed = cardsReviewed
+    self.totalCards = totalCards
   }
 }

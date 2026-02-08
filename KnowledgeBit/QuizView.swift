@@ -28,6 +28,9 @@ struct QuizView: View {
   // 為了不破壞原始順序，我們在出現時把卡片打亂
   @State private var shuffledCards: [Card] = []
   
+  /// 本次測驗開始時間（用於每日任務「學習時長 5 分鐘」）
+  @State private var sessionStartTime = Date()
+  
   private let srsService = SRSService()
   
   // Computed property to get cards to use
@@ -59,9 +62,23 @@ struct QuizView: View {
           streakDays: currentStreak,
           onFinish: {
             saveStudyLog()
-            // 今日任務・測驗：完成一次每日測驗 → 20 EXP，並計入「獲得 30 經驗值」進度
-            if taskService.completeQuizTask(experienceStore: experienceStore) {
-              questService.recordExpGainedToday(20, experienceStore: experienceStore)
+            // 學習時長：本次測驗耗時（分鐘），更新每日任務「學習時長 5 分鐘」
+            let sessionMinutes = max(0, Int(Date().timeIntervalSince(sessionStartTime) / 60))
+            if sessionMinutes > 0 {
+              questService.recordStudyMinutes(sessionMinutes, experienceStore: experienceStore)
+            }
+            let isWordSetQuiz = (cards != nil && !(cards ?? []).isEmpty)
+            if isWordSetQuiz {
+              // 單字集複習：更新「完成一本/兩本單字集複習」「答對率 90%」「全對」
+              questService.recordWordSetCompleted(experienceStore: experienceStore)
+              let total = shuffledCards.count
+              let accuracy = total > 0 ? Int(Double(score) / Double(total) * 100) : 0
+              questService.recordWordSetQuizResult(accuracyPercent: accuracy, isPerfect: (total > 0 && score == total), experienceStore: experienceStore)
+            } else {
+              // 每日測驗：完成一次 → 20 EXP，並計入「獲得 30 經驗值」進度
+              if taskService.completeQuizTask(experienceStore: experienceStore) {
+                questService.recordExpGainedToday(20, experienceStore: experienceStore)
+              }
             }
             dismiss()
           },
@@ -135,8 +152,9 @@ struct QuizView: View {
       }
     }
     .onAppear {
-      // 進入畫面時，將資料庫的卡片洗牌
+      // 進入畫面時，將資料庫的卡片洗牌，並記錄開始時間（供每日任務學習時長）
       shuffledCards = cardsToUse.shuffled()
+      sessionStartTime = Date()
     }
   }
 
@@ -144,7 +162,8 @@ struct QuizView: View {
     // 使用當地時區的「當日開始」作為打卡日期，避免 UTC 與當地時間差
     let calendar = Calendar.current
     let today = calendar.startOfDay(for: Date())
-    let log = StudyLog(date: today, cardsReviewed: score)
+    let total = shuffledCards.count
+    let log = StudyLog(date: today, cardsReviewed: score, totalCards: total)
     modelContext.insert(log)
     try? modelContext.save()
   }

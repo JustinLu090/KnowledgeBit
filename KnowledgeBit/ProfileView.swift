@@ -8,6 +8,7 @@ struct ProfileView: View {
   @EnvironmentObject var authService: AuthService
   @Environment(\.modelContext) private var modelContext
   @Query private var userProfiles: [UserProfile]
+  @StateObject private var profileViewModel = ProfileViewModel()
   @State private var showingSettingsSheet = false
   @State private var showingEditProfileSheet = false
   
@@ -38,6 +39,12 @@ struct ProfileView: View {
       .sheet(isPresented: $showingSettingsSheet) {
         SettingsView()
       }
+      .onAppear {
+        Task { await profileViewModel.refreshUserProfile(authService: authService) }
+      }
+      .refreshable {
+        await profileViewModel.refreshUserProfile(authService: authService)
+      }
     }
   }
   
@@ -45,12 +52,14 @@ struct ProfileView: View {
   
   private var profileHeader: some View {
     let currentProfile = userProfiles.first { $0.userId == authService.currentUserId }
+    // 優先本地 UserProfile，其次 Auth session 的 userMetadata（登入後 Supabase 會寫入 full_name / picture）
     let displayName = currentProfile?.displayName ?? authService.currentUserDisplayName ?? "使用者"
+    let avatarURL = currentProfile?.avatarURL ?? authService.currentUserAvatarURL
     
     return VStack(spacing: 16) {
       AvatarView(
         avatarData: currentProfile?.avatarData,
-        avatarURL: currentProfile?.avatarURL ?? authService.currentUserAvatarURL,
+        avatarURL: avatarURL,
         size: 100
       )
       .shadow(color: .blue.opacity(0.3), radius: 10, x: 0, y: 5)

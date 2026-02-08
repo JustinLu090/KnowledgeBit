@@ -146,10 +146,12 @@ struct LoginView: View {
       // 同時傳遞 accessToken 以解決 audience 不匹配問題
       try await auth.signInWithIdToken(provider: .google, idToken: idToken, accessToken: accessToken)
       
-      // 等待 session 更新
-      try? await Task.sleep(nanoseconds: 500_000_000) // 等待 0.5 秒
+      // 等待 session 更新，並讓 Supabase 有時間寫入 user_metadata（full_name, picture）
+      for _ in 0..<3 {
+        try? await Task.sleep(nanoseconds: 400_000_000) // 0.4 秒
+        if auth.currentUserId != nil { break }
+      }
       
-      // 儲存 Google 用戶資訊到 UserProfile
       if let userId = auth.currentUserId {
         await saveGoogleUserProfile(
           userId: userId,
@@ -163,15 +165,22 @@ struct LoginView: View {
     }
   }
   
-  /// 儲存 Google 用戶資訊到 UserProfile
+  /// 儲存 Google 用戶資訊到 UserProfile（本地 SwiftData + Supabase user_profiles）
   private func saveGoogleUserProfile(userId: UUID, googleUser: GIDGoogleUser) async {
-    // 取得 Google 用戶的名字和頭貼 URL
-    let displayName = googleUser.profile?.name ?? "使用者"
-    let avatarURL = googleUser.profile?.imageURL(withDimension: 200)?.absoluteString
+    // 從 Auth userMetadata 擷取備用（Supabase 會從 Google token 寫入 full_name / picture）
+    let (metadataName, metadataAvatar) = auth.metadataDisplayNameAndAvatar()
     
-    // 下載 Google 頭貼並轉換為 Data
+    // 名字：優先 Google profile.name，其次 session userMetadata（full_name / name），最後 email 前綴
+    let displayName = (googleUser.profile?.name ?? metadataName ?? auth.currentUserDisplayName) ?? "使用者"
+    let finalDisplayName = displayName.isEmpty ? "使用者" : displayName
+    
+    // 頭像 URL：優先 Google profile，其次 session userMetadata（picture / avatar_url）
+    let avatarURLFromGoogle = googleUser.profile?.imageURL(withDimension: 200)?.absoluteString
+    let avatarURLForSync = avatarURLFromGoogle ?? metadataAvatar ?? auth.currentUserAvatarURL
+    
+    // 下載 Google 頭貼並轉換為 Data（供本地顯示）
     var avatarData: Data? = nil
-    if let avatarURLString = avatarURL, let url = URL(string: avatarURLString) {
+    if let urlString = avatarURLForSync ?? avatarURLFromGoogle, let url = URL(string: urlString) {
       do {
         let (data, _) = try await URLSession.shared.data(from: url)
         avatarData = data
@@ -180,36 +189,70 @@ struct LoginView: View {
       }
     }
     
-    // 查詢是否已存在該用戶的資料
     let descriptor = FetchDescriptor<UserProfile>(
       predicate: #Predicate<UserProfile> { $0.userId == userId }
     )
     
     if let existingProfile = try? modelContext.fetch(descriptor).first {
-      // 更新現有資料（只有在沒有自訂資料時才更新）
       if existingProfile.displayName == "使用者" || existingProfile.avatarData == nil {
-        existingProfile.displayName = displayName
+        existingProfile.displayName = finalDisplayName
         if let avatarData = avatarData {
           existingProfile.avatarData = avatarData
-          existingProfile.avatarURL = nil  // 清除 URL，因為已儲存為 Data
+          existingProfile.avatarURL = nil
         } else {
-          existingProfile.avatarURL = avatarURL  // 如果下載失敗，保留 URL
+          existingProfile.avatarURL = avatarURLForSync
         }
         existingProfile.updatedAt = Date()
       }
     } else {
-      // 創建新資料
       let profile = UserProfile(
         userId: userId,
-        displayName: displayName,
+        displayName: finalDisplayName,
         avatarData: avatarData,
-        avatarURL: avatarData == nil ? avatarURL : nil  // 如果有 Data 就不需要 URL
+        avatarURL: avatarData == nil ? avatarURLForSync : nil
       )
       modelContext.insert(profile)
     }
     
-    // 儲存變更
     try? modelContext.save()
+    
+    // 必定將 display_name、avatar_url 寫入 Supabase user_profiles（含 Auth metadata 備用）
+    await syncProfileToSupabase(userId: userId, displayName: finalDisplayName, avatarURL: avatarURLForSync)
+    
+    // 同步至 App Group UserDefaults（供 Widget 與主 App 一致）
+    auth.saveProfileToAppGroup(displayName: finalDisplayName, avatarURL: avatarURLForSync)
+  }
+  
+  /// 將 display_name、avatar_url 寫入 Supabase user_profiles（依 user_id 更新或插入，避免 duplicate key）
+  private func syncProfileToSupabase(userId: UUID, displayName: String, avatarURL: String?) async {
+    let client = auth.getClient()
+    struct ProfileUpdate: Encodable {
+      let display_name: String
+      let avatar_url: String?
+      let updated_at: Date
+    }
+    struct ProfileInsert: Encodable {
+      let user_id: UUID
+      let display_name: String
+      let avatar_url: String?
+      let updated_at: Date
+    }
+    do {
+      let insertPayload = ProfileInsert(user_id: userId, display_name: displayName, avatar_url: avatarURL, updated_at: Date())
+      do {
+        try await client.from("user_profiles").insert(insertPayload).execute()
+      } catch {
+        let updatePayload = ProfileUpdate(display_name: displayName, avatar_url: avatarURL, updated_at: Date())
+        try await client
+          .from("user_profiles")
+          .update(updatePayload)
+          .eq("user_id", value: userId)
+          .execute()
+      }
+      print("✅ [Login] 已同步 display_name、avatar_url 至 Supabase user_profiles")
+    } catch {
+      print("⚠️ [Login] Supabase user_profiles 同步失敗: \(error.localizedDescription)")
+    }
   }
 }
 

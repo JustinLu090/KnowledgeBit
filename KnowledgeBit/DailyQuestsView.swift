@@ -35,6 +35,10 @@ struct DailyQuestsView: View {
       }
     }
     .cardStyle(withShadow: true)
+    .onAppear {
+      // 每次顯示首頁時從 UserDefaults 同步，確保進度與持久化一致
+      questService.refreshFromStorage()
+    }
   }
 }
 

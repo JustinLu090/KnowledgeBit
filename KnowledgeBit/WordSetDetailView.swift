@@ -8,6 +8,9 @@ import WidgetKit
 struct WordSetDetailView: View {
   @Bindable var wordSet: WordSet
   @Environment(\.modelContext) private var modelContext
+  @EnvironmentObject var taskService: TaskService
+  @EnvironmentObject var experienceStore: ExperienceStore
+  @EnvironmentObject var questService: DailyQuestService
   @State private var showingQuiz = false
   
   // Fetch cards for this word set
@@ -69,6 +72,9 @@ struct WordSetDetailView: View {
     }
     .fullScreenCover(isPresented: $showingQuiz) {
       QuizView(cards: cards)
+        .environmentObject(taskService)
+        .environmentObject(experienceStore)
+        .environmentObject(questService)
     }
   }
   

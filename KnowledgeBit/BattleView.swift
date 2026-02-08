@@ -2,6 +2,7 @@
 // Battle mode placeholder view
 
 import SwiftUI
+import Combine
 
 struct BattleView: View {
   var body: some View {

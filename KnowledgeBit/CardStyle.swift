@@ -2,6 +2,7 @@
 // 共用卡片樣式：padding、背景、圓角，可選陰影
 
 import SwiftUI
+import Combine
 
 struct CardStyle: ViewModifier {
   var withShadow: Bool = false

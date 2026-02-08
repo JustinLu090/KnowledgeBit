@@ -1,43 +1,21 @@
 // AchievementsView.swift
-// Achievements/Stats placeholder view
+// 成就 Tab：內嵌學習統計頁面
 
 import SwiftUI
+import SwiftData
 
 struct AchievementsView: View {
+  @Environment(\.modelContext) private var modelContext
+  @EnvironmentObject var dailyQuestService: DailyQuestService
+  
   var body: some View {
     NavigationStack {
-      VStack(spacing: 24) {
-        Spacer()
-        
-        // Chart icon
-        Image(systemName: "chart.bar.fill")
-          .font(.system(size: 80))
-          .foregroundStyle(
-            LinearGradient(
-              colors: [.blue, .purple],
-              startPoint: .topLeading,
-              endPoint: .bottomTrailing
-            )
-          )
-          .shadow(color: .blue.opacity(0.3), radius: 20, x: 0, y: 10)
-        
-        // Coming soon text
-        VStack(spacing: 8) {
-          Text("學習統計")
-            .font(.system(size: 24, weight: .bold))
-            .foregroundStyle(.primary)
-          
-          Text("即將推出")
-            .font(.system(size: 18, weight: .medium))
-            .foregroundStyle(.secondary)
+      StatisticsView()
+        .environmentObject(dailyQuestService)
+        .onAppear {
+          // 進入成就頁時確保昨日數據已寫入 DailyStats（若已跨日）
+          StatisticsManager.shared.flushYesterdayIfNeeded(modelContext: modelContext, dailyQuestService: dailyQuestService)
         }
-        
-        Spacer()
-      }
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .background(Color(.systemGroupedBackground))
-      .navigationTitle("成就")
-      .navigationBarTitleDisplayMode(.large)
     }
   }
 }

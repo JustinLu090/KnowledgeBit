@@ -182,6 +182,7 @@ class DailyQuestService: ObservableObject {
         }
       }
     }
+    notifyQuestsDidChange()
   }
   
   private func saveQuestsToStorage() {
@@ -190,6 +191,17 @@ class DailyQuestService: ObservableObject {
       userDefaults.set(data, forKey: questProgressKey)
     }
     userDefaults.synchronize()
+  }
+
+  /// 通知 UI 更新（mutating 陣列內 struct 不會觸發 @Published）
+  private func notifyQuestsDidChange() {
+    if Thread.isMainThread {
+      objectWillChange.send()
+    } else {
+      DispatchQueue.main.async { [weak self] in
+        self?.objectWillChange.send()
+      }
+    }
   }
   
   private struct QuestProgressSave: Codable {
@@ -207,6 +219,7 @@ class DailyQuestService: ObservableObject {
       let wasCompleted = quests[index].isCompleted
       quests[index].updateProgress(min(newTotal, 30))
       saveQuestsToStorage()
+      notifyQuestsDidChange()
       
       if !wasCompleted && quests[index].isCompleted {
         experienceStore.addExp(delta: quests[index].rewardExp)
@@ -225,6 +238,7 @@ class DailyQuestService: ObservableObject {
       let wasCompleted = quests[index].isCompleted
       quests[index].updateProgress(min(newTotal, 5))
       saveQuestsToStorage()
+      notifyQuestsDidChange()
       
       if !wasCompleted && quests[index].isCompleted {
         experienceStore.addExp(delta: quests[index].rewardExp)
@@ -246,6 +260,7 @@ class DailyQuestService: ObservableObject {
       let target = quests[index].targetValue
       quests[index].updateProgress(min(newTotal, target))
       saveQuestsToStorage()
+      notifyQuestsDidChange()
       
       if !wasCompleted && quests[index].isCompleted {
         experienceStore.addExp(delta: quests[index].rewardExp)
@@ -261,6 +276,7 @@ class DailyQuestService: ObservableObject {
       let wasCompleted = quests[index].isCompleted
       quests[index].updateProgress(accuracyPercent >= 90 ? 1 : 0)
       saveQuestsToStorage()
+      notifyQuestsDidChange()
       if !wasCompleted && quests[index].isCompleted {
         experienceStore.addExp(delta: quests[index].rewardExp)
         recordExpGainedToday(quests[index].rewardExp, experienceStore: experienceStore)
@@ -271,6 +287,7 @@ class DailyQuestService: ObservableObject {
       let wasCompleted = quests[index].isCompleted
       quests[index].updateProgress(isPerfect ? 1 : 0)
       saveQuestsToStorage()
+      notifyQuestsDidChange()
       if !wasCompleted && quests[index].isCompleted {
         experienceStore.addExp(delta: quests[index].rewardExp)
         recordExpGainedToday(quests[index].rewardExp, experienceStore: experienceStore)
@@ -285,6 +302,7 @@ class DailyQuestService: ObservableObject {
       let wasCompleted = quests[index].isCompleted
       quests[index].updateProgress(progress)
       saveQuestsToStorage()
+      notifyQuestsDidChange()
       
       if !wasCompleted && quests[index].isCompleted, let store = experienceStore {
         store.addExp(delta: quests[index].rewardExp)
@@ -341,5 +359,35 @@ class DailyQuestService: ObservableObject {
   /// 今日完成複習的單字集數量（供 UI 顯示用）
   var todayWordSetsCompleted: Int {
     userDefaults.integer(forKey: todayWordSetsCompletedKey)
+  }
+  
+  /// 從 UserDefaults 重新載入任務進度並通知 UI（首頁顯示時呼叫可確保與持久化同步）
+  func refreshFromStorage() {
+    loadQuestsFromStorage()
+    notifyQuestsDidChange()
+  }
+  
+  /// 若已過午夜（新的一天），重新載入並重置任務；回傳 true 表示已重置
+  func refreshIfNewDay() {
+    let calendar = Calendar.current
+    let today = calendar.startOfDay(for: Date())
+    if let savedDate = userDefaults.object(forKey: questDateKey) as? Date,
+       calendar.isDate(savedDate, inSameDayAs: today) {
+      // 同一天，僅確保從儲存恢復（例如從背景回來）並通知 UI
+      loadQuestsFromStorage()
+      notifyQuestsDidChange()
+      return
+    }
+    // 新的一天：重置並重選任務
+    userDefaults.set(today, forKey: questDateKey)
+    userDefaults.set(0, forKey: todayCardsKey)
+    userDefaults.set(0, forKey: todayExpKey)
+    userDefaults.set(0, forKey: todayStudyMinutesKey)
+    userDefaults.set(0, forKey: todayWordSetsCompletedKey)
+    let selectedIndices = selectRandomQuests(for: today)
+    userDefaults.set(selectedIndices, forKey: selectedQuestIndicesKey)
+    loadQuests(selectedIndices: selectedIndices)
+    saveQuestsToStorage()
+    notifyQuestsDidChange()
   }
 }

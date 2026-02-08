@@ -16,6 +16,9 @@ struct ReviewSessionView: View {
   @State private var showResult = false
   @State private var reviewedCount = 0
   
+  /// 本次複習開始時間（用於每日任務「學習時長 5 分鐘」）
+  @State private var sessionStartTime = Date()
+  
   private let srsService = SRSService()
   private var dueCards: [Card] {
     srsService.getDueCards(now: Date(), context: modelContext)
@@ -39,6 +42,7 @@ struct ReviewSessionView: View {
       }
     }
     .onAppear {
+      sessionStartTime = Date()
       // 更新到期卡片數量
       srsService.updateDueCountToAppGroup(context: modelContext)
     }
@@ -210,7 +214,12 @@ struct ReviewSessionView: View {
         currentCardIndex += 1
         isFlipped = false
       } else {
-        // 所有卡片都複習完畢
+        // 所有卡片都複習完畢：更新每日任務「學習時長 5 分鐘」
+        let sessionMinutes = max(0, Int(Date().timeIntervalSince(sessionStartTime) / 60))
+        if sessionMinutes > 0 {
+          questService.recordStudyMinutes(sessionMinutes, experienceStore: experienceStore)
+        }
+        
         showResult = true
         
         // 複習任務僅標記完成，不再發放 EXP

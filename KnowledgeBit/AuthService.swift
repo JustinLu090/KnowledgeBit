@@ -21,6 +21,17 @@ final class AuthService: ObservableObject {
   private let client: SupabaseClient
   private var authTask: Task<Void, Never>?
   
+  // MARK: - App Group UserDefaults（與 Widget 共用；AuthService 為 @MainActor，讀寫皆在主線程，符合 CFPrefs 規範）
+  private static let appGroupKeys = (
+    displayName: "appgroup_user_display_name",
+    avatarURL: "appgroup_user_avatar_url",
+    userId: "appgroup_user_id"
+  )
+  
+  private var appGroupDefaults: UserDefaults? {
+    AppGroup.sharedUserDefaults()
+  }
+  
   /// 是否已登入（檢查 session 是否存在且未過期）
   var isLoggedIn: Bool {
     guard let session = session else { return false }
@@ -174,6 +185,7 @@ final class AuthService: ObservableObject {
       let accessToken = result.user.accessToken.tokenString
       
       // 將 idToken 和 accessToken 傳送給 Supabase 進行驗證
+      // Supabase Auth 會解碼 JWT，將 Google 的 email 寫入 auth.users，並將 name/full_name/picture 等寫入 user_metadata
       _ = try await client.auth.signInWithIdToken(
         credentials: .init(
           provider: .google,
@@ -194,10 +206,110 @@ final class AuthService: ObservableObject {
   /// 登出
   func signOut() async {
     errorMessage = nil
+    clearAppGroupProfile()
     do {
       try await client.auth.signOut()
     } catch {
       errorMessage = error.localizedDescription
+    }
+  }
+  
+  /// 將目前使用者的 displayName、avatarURL 寫入 App Group UserDefaults（供 Widget 等讀取，僅在主線程呼叫）
+  func saveProfileToAppGroup(displayName: String, avatarURL: String?) {
+    guard let defaults = appGroupDefaults else { return }
+    defaults.set(displayName, forKey: Self.appGroupKeys.displayName)
+    defaults.set(avatarURL, forKey: Self.appGroupKeys.avatarURL)
+    if let id = currentUserId {
+      defaults.set(id.uuidString, forKey: Self.appGroupKeys.userId)
+    }
+  }
+  
+  /// 從 App Group 讀取上次寫入的 displayName、avatarURL
+  func loadProfileFromAppGroup() -> (displayName: String?, avatarURL: String?) {
+    guard let defaults = appGroupDefaults else { return (nil, nil) }
+    let name = defaults.string(forKey: Self.appGroupKeys.displayName)
+    let url = defaults.string(forKey: Self.appGroupKeys.avatarURL)
+    return (name, url)
+  }
+  
+  /// 登出時清除 App Group 中的 profile 快取
+  private func clearAppGroupProfile() {
+    guard let defaults = appGroupDefaults else { return }
+    defaults.removeObject(forKey: Self.appGroupKeys.displayName)
+    defaults.removeObject(forKey: Self.appGroupKeys.avatarURL)
+    defaults.removeObject(forKey: Self.appGroupKeys.userId)
+  }
+  
+  /// 強制以目前 Auth session 的 userMetadata 同步到 Supabase user_profiles 與 App Group（登入成功或 App 啟動時呼叫）
+  /// 若 session 中有 full_name / name 或 picture / avatar_url，則 upsert 到資料庫並寫入 App Group
+  func syncProfileFromAuthToSupabaseAndAppGroup() async {
+    guard let userId = currentUserId else { return }
+    let (displayName, avatarURL) = metadataDisplayNameAndAvatar()
+    let name = (displayName ?? currentUserDisplayName) ?? "使用者"
+    let finalName = name.isEmpty ? "使用者" : name
+    let avatar = avatarURL ?? currentUserAvatarURL
+    
+    // 寫入 App Group（與 Widget 一致）
+    saveProfileToAppGroup(displayName: finalName, avatarURL: avatar)
+    
+    // 依 user_id 更新或插入，避免 upsert 預設用 primary key 導致 duplicate key on user_id
+    struct ProfileUpdate: Encodable {
+      let display_name: String
+      let avatar_url: String?
+      let updated_at: Date
+    }
+    struct ProfileInsert: Encodable {
+      let user_id: UUID
+      let display_name: String
+      let avatar_url: String?
+      let updated_at: Date
+    }
+    do {
+      let insertPayload = ProfileInsert(user_id: userId, display_name: finalName, avatar_url: avatar, updated_at: Date())
+      do {
+        try await client.from("user_profiles").insert(insertPayload).execute()
+      } catch {
+        // 已存在則改為 update
+        let updatePayload = ProfileUpdate(display_name: finalName, avatar_url: avatar, updated_at: Date())
+        try await client
+          .from("user_profiles")
+          .update(updatePayload)
+          .eq("user_id", value: userId)
+          .execute()
+      }
+      print("✅ [Auth] 已強制同步 display_name、avatar_url 至 Supabase 與 App Group")
+    } catch {
+      print("⚠️ [Auth] 同步 user_profiles 失敗: \(error.localizedDescription)")
+    }
+  }
+  
+  /// 將指定的 displayName、avatarURL 寫入 Supabase user_profiles 與 App Group（供 ProfileViewModel 等呼叫）
+  func syncProfileToRemote(displayName: String, avatarURL: String?) async {
+    guard let userId = currentUserId else { return }
+    let finalName = displayName.isEmpty ? "使用者" : displayName
+    saveProfileToAppGroup(displayName: finalName, avatarURL: avatarURL)
+    struct ProfileUpdate: Encodable {
+      let display_name: String
+      let avatar_url: String?
+      let updated_at: Date
+    }
+    struct ProfileInsert: Encodable {
+      let user_id: UUID
+      let display_name: String
+      let avatar_url: String?
+      let updated_at: Date
+    }
+    do {
+      let insertPayload = ProfileInsert(user_id: userId, display_name: finalName, avatar_url: avatarURL, updated_at: Date())
+      do {
+        try await client.from("user_profiles").insert(insertPayload).execute()
+      } catch {
+        let updatePayload = ProfileUpdate(display_name: finalName, avatar_url: avatarURL, updated_at: Date())
+        try await client.from("user_profiles").update(updatePayload).eq("user_id", value: userId).execute()
+      }
+      print("✅ [Auth] 已同步 profile 至遠端")
+    } catch {
+      print("⚠️ [Auth] 同步 user_profiles 失敗: \(error.localizedDescription)")
     }
   }
   
@@ -222,21 +334,32 @@ final class AuthService: ObservableObject {
     // session 會由 authStateChanges 自動更新
   }
   
-  /// 取得當前用戶的顯示名稱（從 Supabase session）
+  /// 取得當前用戶的顯示名稱（從 Supabase session 的 user_metadata，Google 登入後通常有 full_name 或 name）
   var currentUserDisplayName: String? {
     guard let session = session else { return nil }
     let metadata = session.user.userMetadata
-    return metadata["full_name"]?.stringValue ?? 
-           metadata["name"]?.stringValue ??
-           session.user.email?.components(separatedBy: "@").first
+    return metadata["full_name"]?.stringValue
+      ?? metadata["name"]?.stringValue
+      ?? session.user.email?.components(separatedBy: "@").first
   }
   
-  /// 取得當前用戶的頭貼 URL（從 Supabase session）
+  /// 取得當前用戶的頭貼 URL（從 Supabase session 的 user_metadata，Google 登入後通常有 picture 或 avatar_url）
   var currentUserAvatarURL: String? {
     guard let session = session else { return nil }
     let metadata = session.user.userMetadata
-    return metadata["avatar_url"]?.stringValue ??
-           metadata["picture"]?.stringValue
+    return metadata["avatar_url"]?.stringValue
+      ?? metadata["picture"]?.stringValue
+  }
+  
+  /// 從目前 session 的 userMetadata 擷取 full_name 與 avatar URL（供登入後同步到 user_profiles）
+  func metadataDisplayNameAndAvatar() -> (displayName: String?, avatarURL: String?) {
+    guard let session = session else { return (nil, nil) }
+    let metadata = session.user.userMetadata
+    let name = metadata["full_name"]?.stringValue
+      ?? metadata["name"]?.stringValue
+      ?? session.user.email?.components(separatedBy: "@").first
+    let avatar = metadata["avatar_url"]?.stringValue ?? metadata["picture"]?.stringValue
+    return (name, avatar)
   }
   
   /// 取得 Supabase client（給其他功能打 API 用）

@@ -3,6 +3,7 @@
 
 import SwiftUI
 import PhotosUI
+import Combine
 
 // MARK: - AvatarView (display only)
 

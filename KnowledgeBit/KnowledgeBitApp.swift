@@ -10,6 +10,7 @@ struct KnowledgeBitApp: App {
     let schema = Schema([
       Card.self,
       StudyLog.self,
+      DailyStats.self,
       WordSet.self,
       UserProfile.self
     ])
@@ -121,6 +122,7 @@ struct KnowledgeBitApp: App {
   @StateObject private var taskService = TaskService()
   @StateObject private var dailyQuestService = DailyQuestService()
   @StateObject private var authService = AuthService()
+  @Environment(\.scenePhase) private var scenePhase
   
   var body: some Scene {
     WindowGroup {
@@ -132,8 +134,9 @@ struct KnowledgeBitApp: App {
             .environmentObject(dailyQuestService)
             .environmentObject(authService)
             .onAppear {
-              // 設置 ExperienceStore 的 authService 引用，以便進行雲端同步
               experienceStore.authService = authService
+              // App 啟動時強制以 Google/Auth 的 profile 比對並同步至 Supabase 與 App Group
+              Task { await authService.syncProfileFromAuthToSupabaseAndAppGroup() }
             }
         } else {
           LoginView()
@@ -151,5 +154,14 @@ struct KnowledgeBitApp: App {
       }
     }
     .modelContainer(sharedModelContainer)
+    .onChange(of: scenePhase) { _, newPhase in
+      if newPhase == .active {
+        dailyQuestService.refreshIfNewDay()
+        // 回到前景時若已登入，強制同步 profile（與 Google/Auth 一致）
+        if authService.isLoggedIn {
+          Task { await authService.syncProfileFromAuthToSupabaseAndAppGroup() }
+        }
+      }
+    }
   }
 }

@@ -2,6 +2,7 @@
 import SwiftUI
 import SwiftData
 import WidgetKit
+import Combine
 
 struct CardDetailView: View {
   @Bindable var card: Card

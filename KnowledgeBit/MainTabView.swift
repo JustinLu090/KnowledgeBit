@@ -2,8 +2,11 @@
 // Main tab bar navigation structure with enhanced styling
 
 import SwiftUI
+import SwiftData
 
 struct MainTabView: View {
+  @Environment(\.modelContext) private var modelContext
+  @EnvironmentObject var dailyQuestService: DailyQuestService
   @State private var selectedTab = 0
   
   init() {
@@ -65,5 +68,9 @@ struct MainTabView: View {
         .tag(4)
     }
     .tint(.blue)
+    .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+      // App 回到前景時將昨日 EXP/學習時長寫入 DailyStats（若已跨日）
+      StatisticsManager.shared.flushYesterdayIfNeeded(modelContext: modelContext, dailyQuestService: dailyQuestService)
+    }
   }
 }

@@ -145,32 +145,34 @@ class ExperienceStore: ObservableObject {
     let client = authService.getClient()
     
     do {
-      // 使用 upsert 將等級與經驗值同步到 user_profiles 表
-      // Supabase 的 upsert 會自動根據 user_id (UNIQUE) 判斷是插入還是更新
-      let payload = ProfileSyncPayload(
-        user_id: userId,
-        level: level,
-        current_exp: exp,
-        updated_at: Date()
-      )
-      
-      _ = try await client
-        .from("user_profiles")
-        .upsert(payload)
-        .execute()
-      
+      let displayName = authService.currentUserDisplayName ?? "使用者"
+      struct ProfileUpdate: Encodable {
+        let display_name: String
+        let level: Int
+        let current_exp: Int
+        let updated_at: Date
+      }
+      struct ProfileInsert: Encodable {
+        let user_id: UUID
+        let display_name: String
+        let level: Int
+        let current_exp: Int
+        let updated_at: Date
+      }
+      let insertPayload = ProfileInsert(user_id: userId, display_name: displayName, level: level, current_exp: exp, updated_at: Date())
+      do {
+        try await client.from("user_profiles").insert(insertPayload).execute()
+      } catch {
+        let updatePayload = ProfileUpdate(display_name: displayName, level: level, current_exp: exp, updated_at: Date())
+        try await client
+          .from("user_profiles")
+          .update(updatePayload)
+          .eq("user_id", value: userId)
+          .execute()
+      }
       print("✅ [Cloud Sync] 成功同步等級與經驗值到雲端 - Level: \(level), EXP: \(exp)")
     } catch {
-      // 雲端同步失敗不影響本地功能，僅記錄錯誤
       print("❌ [Cloud Sync] 同步失敗: \(error.localizedDescription)")
     }
   }
-}
-
-// MARK: - 雲端同步用 payload（對應 user_profiles 表欄位）
-private struct ProfileSyncPayload: Encodable {
-  let user_id: UUID
-  let level: Int
-  let current_exp: Int
-  let updated_at: Date
 }
