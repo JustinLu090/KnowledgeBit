@@ -40,10 +40,12 @@ struct ProfileView: View {
         SettingsView()
       }
       .onAppear {
-        Task { await profileViewModel.refreshUserProfile(authService: authService) }
+        let currentProfile = userProfiles.first { $0.userId == authService.currentUserId }
+        Task { await profileViewModel.refreshUserProfile(authService: authService, localProfile: currentProfile) }
       }
       .refreshable {
-        await profileViewModel.refreshUserProfile(authService: authService)
+        let currentProfile = userProfiles.first { $0.userId == authService.currentUserId }
+        await profileViewModel.refreshUserProfile(authService: authService, localProfile: currentProfile)
       }
     }
   }
@@ -82,6 +84,7 @@ struct ProfileView: View {
         currentProfile: currentProfile,
         userId: authService.currentUserId
       )
+      .environmentObject(authService)
       .onDisappear {
         // 重新載入資料
         try? modelContext.save()

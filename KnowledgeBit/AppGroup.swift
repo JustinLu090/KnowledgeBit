@@ -8,7 +8,9 @@ enum AppGroup {
   /// Update this value to match your App Group ID configured in Xcode Signing & Capabilities
   static let identifier = "group.com.KnowledgeBit"
   
-  /// 取得 App Group 共用的 UserDefaults。讀寫請在主線程執行，以避免 CFPrefsPlistSource 相關錯誤。
+  /// 取得 App Group 共用的 UserDefaults。
+  /// 讀寫請在主線程執行，以避免 CFPrefsPlistSource 相關錯誤。
+  /// 若回傳 nil，請檢查 Signing & Capabilities > App Groups 是否正確設定 group.com.KnowledgeBit。
   static func sharedUserDefaults() -> UserDefaults? {
     UserDefaults(suiteName: identifier)
   }
