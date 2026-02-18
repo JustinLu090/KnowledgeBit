@@ -135,8 +135,11 @@ struct KnowledgeBitApp: App {
             .environmentObject(authService)
             .onAppear {
               experienceStore.authService = authService
-              // App 啟動時強制以 Google/Auth 的 profile 比對並同步至 Supabase 與 App Group
-              Task { await authService.syncProfileFromAuthToSupabaseAndAppGroup() }
+              // 延遲 0.5 秒再同步，避免 nw_connection 尚未 ready 時發出請求（race condition）
+              Task {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                await authService.syncProfileFromAuthToSupabaseAndAppGroup()
+              }
             }
         } else {
           LoginView()
@@ -157,9 +160,12 @@ struct KnowledgeBitApp: App {
     .onChange(of: scenePhase) { _, newPhase in
       if newPhase == .active {
         dailyQuestService.refreshIfNewDay()
-        // 回到前景時若已登入，強制同步 profile（與 Google/Auth 一致）
+        // 回到前景時若已登入，延遲同步 profile（避免 nw_connection 未 ready）
         if authService.isLoggedIn {
-          Task { await authService.syncProfileFromAuthToSupabaseAndAppGroup() }
+          Task {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            await authService.syncProfileFromAuthToSupabaseAndAppGroup()
+          }
         }
       }
     }

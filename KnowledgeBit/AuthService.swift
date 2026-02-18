@@ -216,12 +216,16 @@ final class AuthService: ObservableObject {
   
   /// 將目前使用者的 displayName、avatarURL 寫入 App Group UserDefaults（供 Widget 等讀取，僅在主線程呼叫）
   func saveProfileToAppGroup(displayName: String, avatarURL: String?) {
-    guard let defaults = appGroupDefaults else { return }
+    guard let defaults = appGroupDefaults else {
+      print("⚠️ [App Group] sharedUserDefaults 為 nil，請確認 Signing & Capabilities 已設定 App Groups")
+      return
+    }
     defaults.set(displayName, forKey: Self.appGroupKeys.displayName)
     defaults.set(avatarURL, forKey: Self.appGroupKeys.avatarURL)
     if let id = currentUserId {
       defaults.set(id.uuidString, forKey: Self.appGroupKeys.userId)
     }
+    defaults.synchronize()
   }
   
   /// 從 App Group 讀取上次寫入的 displayName、avatarURL
@@ -238,6 +242,7 @@ final class AuthService: ObservableObject {
     defaults.removeObject(forKey: Self.appGroupKeys.displayName)
     defaults.removeObject(forKey: Self.appGroupKeys.avatarURL)
     defaults.removeObject(forKey: Self.appGroupKeys.userId)
+    defaults.synchronize()
   }
   
   /// 強制以目前 Auth session 的 userMetadata 同步到 Supabase user_profiles 與 App Group（登入成功或 App 啟動時呼叫）
@@ -283,30 +288,40 @@ final class AuthService: ObservableObject {
     }
   }
   
+  /// 上傳頭貼至 Supabase Storage，回傳公開 URL
+  /// 需先在 Supabase Dashboard 建立 bucket「avatars」且設為 public
+  func uploadAvatar(userId: UUID, imageData: Data) async throws -> String {
+    guard session != nil else {
+      throw NSError(domain: "AuthService", code: -1, userInfo: [NSLocalizedDescriptionKey: "未登入，無法上傳"])
+    }
+    let path = "\(userId.uuidString)/avatar.jpg"
+    #if DEBUG
+    print("📤 [UploadAvatar] path=\(path), userId=\(userId.uuidString)")
+    #endif
+    let bucket = "avatars"  // 需與 Dashboard 的 bucket 名稱完全一致（含大小寫）
+    _ = try await client.storage
+      .from(bucket)
+      .upload(path, data: imageData, options: FileOptions(contentType: "image/jpeg", upsert: true))
+    let publicURL = try client.storage.from(bucket).getPublicURL(path: path)
+    return publicURL.absoluteString
+  }
+
   /// 將指定的 displayName、avatarURL 寫入 Supabase user_profiles 與 App Group（供 ProfileViewModel 等呼叫）
   func syncProfileToRemote(displayName: String, avatarURL: String?) async {
     guard let userId = currentUserId else { return }
     let finalName = displayName.isEmpty ? "使用者" : displayName
     saveProfileToAppGroup(displayName: finalName, avatarURL: avatarURL)
-    struct ProfileUpdate: Encodable {
-      let display_name: String
-      let avatar_url: String?
-      let updated_at: Date
-    }
-    struct ProfileInsert: Encodable {
+    struct ProfileUpsert: Encodable {
       let user_id: UUID
       let display_name: String
       let avatar_url: String?
       let updated_at: Date
     }
     do {
-      let insertPayload = ProfileInsert(user_id: userId, display_name: finalName, avatar_url: avatarURL, updated_at: Date())
-      do {
-        try await client.from("user_profiles").insert(insertPayload).execute()
-      } catch {
-        let updatePayload = ProfileUpdate(display_name: finalName, avatar_url: avatarURL, updated_at: Date())
-        try await client.from("user_profiles").update(updatePayload).eq("user_id", value: userId).execute()
-      }
+      let payload = ProfileUpsert(user_id: userId, display_name: finalName, avatar_url: avatarURL, updated_at: Date())
+      try await client.from("user_profiles")
+        .upsert(payload, onConflict: "user_id")
+        .execute()
       print("✅ [Auth] 已同步 profile 至遠端")
     } catch {
       print("⚠️ [Auth] 同步 user_profiles 失敗: \(error.localizedDescription)")

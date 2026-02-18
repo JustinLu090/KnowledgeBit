@@ -521,6 +521,7 @@
 				CODE_SIGN_ENTITLEMENTS = KnowledgeWidgetExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = D984VGGK65;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = KnowledgeWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = KnowledgeWidget;
@@ -553,6 +554,7 @@
 				CODE_SIGN_ENTITLEMENTS = KnowledgeWidgetExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = D984VGGK65;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = KnowledgeWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = KnowledgeWidget;
