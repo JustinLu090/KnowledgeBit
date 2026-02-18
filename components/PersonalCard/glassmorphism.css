@@ -1,0 +1,430 @@
+/* Glassmorphism Styles - 重構版本：深色霓虹城市感 + 幻彩漸層效果 */
+
+/* ============================================
+   基礎玻璃態效果
+   ============================================ */
+.glass-base {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 
+    0 8px 32px 0 rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.3);
+}
+
+/* ============================================
+   玻璃態卡片容器 - 增強版
+   ============================================ */
+.glass-card {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 24px;
+  box-shadow: 
+    0 8px 32px 0 rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.3);
+  transition: all 0.3s ease;
+}
+
+.glass-card:hover {
+  box-shadow: 
+    0 12px 40px 0 rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.4),
+    0 0 30px rgba(138, 43, 226, 0.2);
+  transform: translateY(-2px);
+}
+
+/* ============================================
+   導航按鈕樣式 - 全圓角膠囊型 + 幻彩效果
+   ============================================ */
+.glass-nav-button {
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 9999px; /* 完全圓角，pill 形狀 */
+  padding: 14px 24px;
+  color: white;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+  font-weight: 500;
+  font-size: 15px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  box-shadow: 
+    0 4px 16px 0 rgba(0, 0, 0, 0.15),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.3),
+    inset 0 -1px 0 0 rgba(255, 255, 255, 0.1);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+/* 幻彩漸層背景動畫 */
+.glass-nav-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 182, 193, 0.3) 25%,
+    rgba(173, 216, 230, 0.3) 50%,
+    rgba(221, 160, 221, 0.3) 75%,
+    transparent
+  );
+  transition: left 0.6s ease;
+  z-index: 0;
+}
+
+.glass-nav-button:hover::before {
+  left: 100%;
+}
+
+.glass-nav-button:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.3);
+  box-shadow: 
+    0 8px 24px 0 rgba(138, 43, 226, 0.3),
+    0 0 30px rgba(255, 182, 193, 0.4),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.4),
+    inset 0 -1px 0 0 rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px);
+}
+
+.glass-nav-button:active {
+  transform: translateY(0);
+  box-shadow: 
+    0 4px 12px 0 rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.2);
+}
+
+/* 活動狀態 - 強烈的幻彩效果 */
+.glass-nav-button.active {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 182, 193, 0.3) 0%,
+    rgba(173, 216, 230, 0.3) 50%,
+    rgba(221, 160, 221, 0.3) 100%
+  );
+  border-color: rgba(255, 255, 255, 0.35);
+  box-shadow: 
+    0 12px 32px 0 rgba(138, 43, 226, 0.4),
+    0 0 40px rgba(255, 182, 193, 0.5),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.5),
+    0 0 60px rgba(138, 43, 226, 0.3);
+  animation: iridescent-glow 3s ease-in-out infinite;
+}
+
+@keyframes iridescent-glow {
+  0%, 100% {
+    box-shadow: 
+      0 12px 32px 0 rgba(138, 43, 226, 0.4),
+      0 0 40px rgba(255, 182, 193, 0.5),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.5),
+      0 0 60px rgba(138, 43, 226, 0.3);
+  }
+  50% {
+    box-shadow: 
+      0 12px 32px 0 rgba(138, 43, 226, 0.5),
+      0 0 50px rgba(173, 216, 230, 0.6),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.6),
+      0 0 80px rgba(221, 160, 221, 0.4);
+  }
+}
+
+.glass-nav-button > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ============================================
+   行動按鈕樣式 - 全圓角 + 強烈外發光
+   ============================================ */
+.glass-action-button {
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 9999px; /* 全圓角膠囊型 */
+  padding: 16px 28px;
+  color: white;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+  font-weight: 600;
+  font-size: 15px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  box-shadow: 
+    0 8px 24px 0 rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.3);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+/* 藍色行動按鈕 - 增強外發光 */
+.glass-action-button.blue {
+  background: rgba(59, 130, 246, 0.25);
+  box-shadow: 
+    0 8px 24px 0 rgba(59, 130, 246, 0.3),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.3),
+    0 0 20px rgba(59, 130, 246, 0.3);
+}
+
+.glass-action-button.blue:hover {
+  background: rgba(59, 130, 246, 0.35);
+  box-shadow: 
+    0 16px 40px 0 rgba(59, 130, 246, 0.5),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.4),
+    0 0 50px rgba(59, 130, 246, 0.6),
+    0 0 80px rgba(59, 130, 246, 0.3);
+  transform: translateY(-3px);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.glass-action-button.blue:active {
+  transform: translateY(-1px);
+  box-shadow: 
+    0 8px 20px 0 rgba(59, 130, 246, 0.4),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.3),
+    0 0 30px rgba(59, 130, 246, 0.4);
+}
+
+/* 綠色行動按鈕 */
+.glass-action-button.green {
+  background: rgba(16, 185, 129, 0.25);
+  box-shadow: 
+    0 8px 24px 0 rgba(16, 185, 129, 0.3),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.3),
+    0 0 20px rgba(16, 185, 129, 0.3);
+}
+
+.glass-action-button.green:hover {
+  background: rgba(16, 185, 129, 0.35);
+  box-shadow: 
+    0 16px 40px 0 rgba(16, 185, 129, 0.5),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.4),
+    0 0 50px rgba(16, 185, 129, 0.6),
+    0 0 80px rgba(16, 185, 129, 0.3);
+  transform: translateY(-3px);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.glass-action-button.green:active {
+  transform: translateY(-1px);
+  box-shadow: 
+    0 8px 20px 0 rgba(16, 185, 129, 0.4),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.3),
+    0 0 30px rgba(16, 185, 129, 0.4);
+}
+
+/* 青色行動按鈕 */
+.glass-action-button.cyan {
+  background: rgba(6, 182, 212, 0.25);
+  box-shadow: 
+    0 8px 24px 0 rgba(6, 182, 212, 0.3),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.3),
+    0 0 20px rgba(6, 182, 212, 0.3);
+}
+
+.glass-action-button.cyan:hover {
+  background: rgba(6, 182, 212, 0.35);
+  box-shadow: 
+    0 16px 40px 0 rgba(6, 182, 212, 0.5),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.4),
+    0 0 50px rgba(6, 182, 212, 0.6),
+    0 0 80px rgba(6, 182, 212, 0.3);
+  transform: translateY(-3px);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.glass-action-button.cyan:active {
+  transform: translateY(-1px);
+  box-shadow: 
+    0 8px 20px 0 rgba(6, 182, 212, 0.4),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.3),
+    0 0 30px rgba(6, 182, 212, 0.4);
+}
+
+/* 紫色行動按鈕 - 幻彩效果 */
+.glass-action-button.purple {
+  background: linear-gradient(
+    135deg,
+    rgba(168, 85, 247, 0.25) 0%,
+    rgba(139, 92, 246, 0.25) 50%,
+    rgba(192, 132, 252, 0.25) 100%
+  );
+  box-shadow: 
+    0 8px 24px 0 rgba(168, 85, 247, 0.3),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.3),
+    0 0 20px rgba(168, 85, 247, 0.3);
+}
+
+.glass-action-button.purple:hover {
+  background: linear-gradient(
+    135deg,
+    rgba(168, 85, 247, 0.4) 0%,
+    rgba(139, 92, 246, 0.4) 50%,
+    rgba(192, 132, 252, 0.4) 100%
+  );
+  box-shadow: 
+    0 16px 40px 0 rgba(168, 85, 247, 0.5),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.4),
+    0 0 50px rgba(168, 85, 247, 0.6),
+    0 0 80px rgba(192, 132, 252, 0.4),
+    0 0 120px rgba(139, 92, 246, 0.2);
+  transform: translateY(-3px);
+  border-color: rgba(255, 255, 255, 0.35);
+  animation: purple-glow 2s ease-in-out infinite;
+}
+
+@keyframes purple-glow {
+  0%, 100% {
+    box-shadow: 
+      0 16px 40px 0 rgba(168, 85, 247, 0.5),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.4),
+      0 0 50px rgba(168, 85, 247, 0.6),
+      0 0 80px rgba(192, 132, 252, 0.4),
+      0 0 120px rgba(139, 92, 246, 0.2);
+  }
+  50% {
+    box-shadow: 
+      0 16px 40px 0 rgba(168, 85, 247, 0.6),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.5),
+      0 0 60px rgba(192, 132, 252, 0.7),
+      0 0 100px rgba(139, 92, 246, 0.5),
+      0 0 140px rgba(168, 85, 247, 0.3);
+  }
+}
+
+.glass-action-button.purple:active {
+  transform: translateY(-1px);
+  box-shadow: 
+    0 8px 20px 0 rgba(168, 85, 247, 0.4),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.3),
+    0 0 30px rgba(168, 85, 247, 0.4);
+}
+
+.glass-action-button:active {
+  transform: translateY(-1px);
+}
+
+/* ============================================
+   圓形按鈕（個人檔案按鈕）- 增強版
+   ============================================ */
+.glass-circle-button {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  color: white;
+  box-shadow: 
+    0 4px 16px 0 rgba(0, 0, 0, 0.15),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.3);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.glass-circle-button:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+  box-shadow: 
+    0 8px 24px 0 rgba(138, 43, 226, 0.3),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.4),
+    0 0 30px rgba(255, 182, 193, 0.4),
+    0 0 50px rgba(138, 43, 226, 0.2);
+  transform: scale(1.1);
+}
+
+.glass-circle-button:active {
+  transform: scale(0.95);
+  box-shadow: 
+    0 2px 8px 0 rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.2);
+}
+
+/* ============================================
+   搜尋欄樣式
+   ============================================ */
+.glass-search {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 9999px; /* 全圓角 */
+  padding: 14px 24px;
+  color: white;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+  box-shadow: 
+    0 4px 16px 0 rgba(0, 0, 0, 0.15),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.3);
+  transition: all 0.3s ease;
+}
+
+.glass-search:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.35);
+  box-shadow: 
+    0 8px 24px 0 rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.4),
+    0 0 30px rgba(138, 43, 226, 0.3);
+}
+
+.glass-search::placeholder {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* ============================================
+   文字樣式 - 無襯線體 + 純白/半透明白
+   ============================================ */
+.glass-text {
+  color: rgba(255, 255, 255, 0.85); /* 半透明白色副標題 */
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.glass-text-bold {
+  color: white; /* 純白色主標題 */
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+  font-weight: 600;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+/* ============================================
+   響應式調整
+   ============================================ */
+@media (max-width: 768px) {
+  .glass-nav-button {
+    padding: 12px 20px;
+    font-size: 14px;
+  }
+  
+  .glass-action-button {
+    padding: 14px 24px;
+    font-size: 14px;
+  }
+  
+  .glass-card {
+    border-radius: 20px;
+  }
+}
+
+/* ============================================
+   瀏覽器兼容性增強
+   ============================================ */
+@supports not (backdrop-filter: blur(20px)) {
+  .glass-base,
+  .glass-card,
+  .glass-nav-button,
+  .glass-action-button,
+  .glass-circle-button,
+  .glass-search {
+    background: rgba(255, 255, 255, 0.15);
+  }
+}

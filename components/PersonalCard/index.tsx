@@ -5,6 +5,7 @@ import Avatar from './Avatar'
 import UserMeta from './UserMeta'
 import ExpBar from './ExpBar'
 import ProfileButton from './ProfileButton'
+import './glassmorphism.css'
 
 export interface PersonalCardProps {
   name: string
@@ -38,8 +39,8 @@ export default function PersonalCard({
   }, [exp])
 
   return (
-    <div className="relative bg-white rounded-2xl shadow-sm border border-gray-100 p-4 md:p-5">
-      <div className="flex items-start gap-3 md:gap-4">
+    <div className="glass-card relative p-6 md:p-8">
+      <div className="flex items-start gap-4 md:gap-6">
         {/* 左側：頭像 */}
         <Avatar avatarUrl={avatarUrl} name={name} size="md" />
 
