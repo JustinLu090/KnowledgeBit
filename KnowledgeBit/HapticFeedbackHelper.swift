@@ -1,6 +1,7 @@
 // HapticFeedbackHelper.swift
 // Safe haptic feedback wrapper that checks for device support
 
+#if canImport(UIKit)
 import UIKit
 import CoreHaptics
 
@@ -57,4 +58,19 @@ enum HapticFeedbackHelper {
     generator.notificationOccurred(type)
   }
 }
+
+#else
+// Fallback for environments without UIKit (e.g., Widget Extension)
+enum HapticFeedbackHelper {
+  static var supportsHaptics: Bool {
+    return false
+  }
+  
+  static func light() {}
+  static func medium() {}
+  static func heavy() {}
+  static func selection() {}
+  static func notification(_ type: Any) {}
+}
+#endif
 

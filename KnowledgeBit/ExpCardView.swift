@@ -63,7 +63,7 @@ struct ExpCardView: View {
 // MARK: - Preview
 #Preview {
   let store = ExperienceStore()
-  return ExpCardView(experienceStore: store)
+  ExpCardView(experienceStore: store)
     .padding()
-    .background(Color(.systemGroupedBackground))
+    .background(Color(UIColor.systemGroupedBackground))
 }

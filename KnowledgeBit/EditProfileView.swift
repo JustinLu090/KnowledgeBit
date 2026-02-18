@@ -2,6 +2,7 @@
 // 編輯用戶個人資料（頭貼和名字）
 
 import SwiftUI
+import UIKit
 import SwiftData
 import PhotosUI
 

@@ -61,5 +61,5 @@ struct DueCardsCardView: View {
   DueCardsCardView()
     .modelContainer(for: Card.self, inMemory: true)
     .padding()
-    .background(Color(.systemGroupedBackground))
+    .background(Color(UIColor.systemGroupedBackground))
 }

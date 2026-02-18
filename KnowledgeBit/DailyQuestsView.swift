@@ -112,5 +112,5 @@ struct QuestCardView: View {
     .environmentObject(ExperienceStore())
     .environmentObject(DailyQuestService())
     .padding()
-    .background(Color(.systemGroupedBackground))
+    .background(Color(UIColor.systemGroupedBackground))
 }
