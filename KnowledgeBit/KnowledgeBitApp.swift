@@ -138,7 +138,14 @@ struct KnowledgeBitApp: App {
               // 延遲 0.5 秒再同步，避免 nw_connection 尚未 ready 時發出請求（race condition）
               Task {
                 try? await Task.sleep(nanoseconds: 500_000_000)
+                // 先同步 profile（不立即刷新）
                 await authService.syncProfileFromAuthToSupabaseAndAppGroup()
+                // 從 Supabase 載入用戶等級與經驗值並同步到 App Group（不立即刷新）
+                await experienceStore.loadFromCloud()
+                // 所有資料同步完成後，統一觸發一次 Widget 刷新
+                await MainActor.run {
+                  WidgetReloader.reloadAll()
+                }
               }
             }
         } else {
@@ -164,7 +171,14 @@ struct KnowledgeBitApp: App {
         if authService.isLoggedIn {
           Task {
             try? await Task.sleep(nanoseconds: 500_000_000)
+            // 先同步 profile（不立即刷新）
             await authService.syncProfileFromAuthToSupabaseAndAppGroup()
+            // 從 Supabase 載入用戶等級與經驗值並同步到 App Group（不立即刷新）
+            await experienceStore.loadFromCloud()
+            // 所有資料同步完成後，統一觸發一次 Widget 刷新
+            await MainActor.run {
+              WidgetReloader.reloadAll()
+            }
           }
         }
       }

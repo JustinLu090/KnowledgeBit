@@ -83,16 +83,25 @@ class SRSService {
   
   // MARK: - 更新到期卡片數量到 App Group
   // 計算並儲存今日到期卡片數量，供 Widget 使用
+  // 確保在主線程執行，避免線程安全問題
   func updateDueCountToAppGroup(context: ModelContext) {
-    let dueCount = getDueCards(now: Date(), context: context).count
-    userDefaults.set(dueCount, forKey: "today_due_count")
-    
-    // 重新載入 Widget timeline
-    #if os(iOS)
-    if #available(iOS 16.0, *) {
-      WidgetCenter.shared.reloadAllTimelines()
+    // 確保在主線程執行 UserDefaults 操作
+    if Thread.isMainThread {
+      let dueCount = getDueCards(now: Date(), context: context).count
+      userDefaults.set(dueCount, forKey: AppGroup.Keys.todayDueCount)
+      userDefaults.synchronize() // 確保立即寫入
+      
+      // 使用 WidgetReloader 統一管理刷新（帶防抖機制）
+      WidgetReloader.reloadAll()
+    } else {
+      DispatchQueue.main.async { [weak self] in
+        guard let self = self else { return }
+        let dueCount = self.getDueCards(now: Date(), context: context).count
+        self.userDefaults.set(dueCount, forKey: AppGroup.Keys.todayDueCount)
+        self.userDefaults.synchronize()
+        WidgetReloader.reloadAll()
+      }
     }
-    #endif
   }
   
   // MARK: - 取得今日到期卡片數量

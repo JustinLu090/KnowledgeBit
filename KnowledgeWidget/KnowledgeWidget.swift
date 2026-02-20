@@ -2,6 +2,50 @@ import WidgetKit
 import SwiftUI
 import SwiftData
 import AppIntents
+import Foundation
+
+// MARK: - AppGroup (Widget Extension 本地定義)
+// 注意：如果 AppGroup.swift 已添加到 Widget Extension target，可以移除此定義
+enum AppGroup {
+  /// App Group identifier for sharing SwiftData container between main app and widget
+  static let identifier = "group.com.team.knowledgebit"
+  
+  /// 取得 App Group 共用的 UserDefaults。
+  /// 讀寫請在主線程執行，以避免 CFPrefsPlistSource 相關錯誤。
+  static func sharedUserDefaults() -> UserDefaults? {
+    UserDefaults(suiteName: identifier)
+  }
+  
+  // MARK: - UserDefaults Keys
+  
+  /// UserDefaults Key 常數定義（避免硬編碼字串）
+  enum Keys {
+    // 用戶資料
+    static let displayName = "appgroup_user_display_name"
+    static let avatarURL = "appgroup_user_avatar_url"
+    static let userId = "appgroup_user_id"
+    
+    // 經驗值與等級
+    static let level = "userLevel"
+    static let exp = "userExp"
+    static let expToNext = "expToNext"
+    
+    // Widget 相關
+    static let todayDueCount = "today_due_count"
+  }
+  
+  // MARK: - Supabase 欄位名稱
+  
+  /// Supabase 資料庫欄位名稱常數定義（避免硬編碼字串）
+  enum SupabaseFields {
+    static let displayName = "display_name"
+    static let currentExp = "current_exp"
+    static let avatarURL = "avatar_url"
+    static let userId = "user_id"
+    static let level = "level"
+    static let updatedAt = "updated_at"
+  }
+}
 
 // MARK: - WordSet Forward Declaration
 @Model
@@ -45,7 +89,8 @@ final class UserProfile {
 
 // MARK: - App Group Configuration
 // 使用統一的 App Group identifier（與主 App 的 AppGroup.identifier 一致）
-private let sharedAppGroupIdentifier = "group.com.KnowledgeBit"
+// 注意：Widget Extension 需要能夠訪問 AppGroup.swift，確保該文件在 Widget target 中
+private let sharedAppGroupIdentifier = AppGroup.identifier
 
 // MARK: - Shared SwiftData Container
 enum KnowledgeBitSharedContainer {
@@ -256,7 +301,8 @@ struct CardEntry: TimelineEntry {
     self.todayDueCount = todayDueCount
   }
 
-  // 初始化：Placeholder
+  // 初始化：Placeholder（用於第一次啟動或資料不可用時）
+  // 所有值都使用安全的預設值，避免 Widget 顯示空白或崩潰
   init() {
     self.date = Date()
     self.cards = []
@@ -264,6 +310,8 @@ struct CardEntry: TimelineEntry {
     self.cardIDs = []
     self.todoCount = 0
     self.todayDueCount = 0
+    // 注意：displayName、level、exp 等資料會在 Widget View 中透過 getUserProfile() 讀取
+    // 如果讀不到，會使用預設值（"使用者", Level 1, EXP 0）
   }
 }
 
@@ -273,25 +321,64 @@ struct CardTimelineProvider: AppIntentTimelineProvider {
   typealias Entry = CardEntry
   
   // 從 App Group UserDefaults 讀取今日到期卡片數
+  // 防呆邏輯：如果讀不到資料，返回預設值 0
   private func getTodayDueCount() -> Int {
-    guard let defaults = UserDefaults(suiteName: sharedAppGroupIdentifier) else {
+    guard let defaults = AppGroup.sharedUserDefaults() else {
+      // App Group 不可用，返回預設值
       return 0
     }
-    return defaults.integer(forKey: "today_due_count")
+    let count = defaults.integer(forKey: AppGroup.Keys.todayDueCount)
+    // 確保返回值為非負數
+    return max(count, 0)
+  }
+  
+  // 從 App Group UserDefaults 讀取用戶資料（供 Widget 顯示使用）
+  // 確保處理所有 nil 情況並提供合理的預設值
+  private func getUserProfile() -> (displayName: String, level: Int, exp: Int, expToNext: Int) {
+    guard let defaults = AppGroup.sharedUserDefaults() else {
+      // App Group 不可用，返回預設值
+      return ("使用者", 1, 0, 100)
+    }
+    
+    // 讀取 displayName，如果為 nil 則使用預設值
+    let displayName = defaults.string(forKey: AppGroup.Keys.displayName) ?? "使用者"
+    
+    // 讀取 level，確保至少為 1
+    let level = max(defaults.integer(forKey: AppGroup.Keys.level), 1)
+    
+    // 讀取 exp，確保至少為 0
+    let exp = max(defaults.integer(forKey: AppGroup.Keys.exp), 0)
+    
+    // 讀取 expToNext，如果為 0 或未設定，根據 level 計算預設值
+    let expToNext = defaults.integer(forKey: AppGroup.Keys.expToNext)
+    let finalExpToNext: Int
+    if expToNext > 0 {
+      finalExpToNext = expToNext
+    } else {
+      // 如果未設定，根據 level 計算（基礎值 100，每級增加 20%）
+      let baseExp = 100
+      let multiplier = pow(1.2, Double(level - 1))
+      finalExpToNext = max(Int(Double(baseExp) * multiplier), 100)
+    }
+    
+    return (displayName, level, exp, finalExpToNext)
   }
 
   func placeholder(in context: Context) -> CardEntry {
+    // Placeholder 使用預設值，確保 Widget 在第一次載入時不會顯示空白
     let placeholderCard = Card(title: "TCP Handshake", content: "建立連線的三向交握過程...", wordSet: nil)
     let cardIDs = [placeholderCard.id.uuidString]
+    // 使用預設的到期卡片數（5），實際值會在 timeline 中從 AppGroup 讀取
     return CardEntry(cards: [placeholderCard], index: 0, cardIDs: cardIDs, todayDueCount: 5)
   }
 
   func snapshot(for configuration: ConfigurationAppIntent, in context: Context) async -> CardEntry {
     let allCards = await KnowledgeBitSharedContainer.fetchAllCards()
     
-    // 讀取今日到期卡片數
+    // 讀取今日到期卡片數（帶防呆預設值）
     let todayDueCount = getTodayDueCount()
 
+    // 如果沒有卡片，返回空的 Entry（Widget 會顯示預設狀態）
     if allCards.isEmpty {
       return CardEntry()
     }
@@ -329,11 +416,12 @@ struct CardTimelineProvider: AppIntentTimelineProvider {
   func timeline(for configuration: ConfigurationAppIntent, in context: Context) async -> Timeline<CardEntry> {
     let allCards = await KnowledgeBitSharedContainer.fetchAllCards()
     
-    // 讀取今日到期卡片數
+    // 讀取今日到期卡片數（帶防呆預設值）
     let todayDueCount = getTodayDueCount()
 
+    // 如果沒有卡片，返回空的 Entry 並設定下次更新時間
     if allCards.isEmpty {
-      let entry = CardEntry()
+      let entry = CardEntry() // 使用預設值：空卡片、Level 1、EXP 0
       let nextUpdate = Calendar.current.date(byAdding: .minute, value: 15, to: Date())!
       return Timeline(entries: [entry], policy: .after(nextUpdate))
     }
