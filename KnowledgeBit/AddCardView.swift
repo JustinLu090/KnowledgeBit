@@ -6,6 +6,7 @@ import WidgetKit
 struct AddCardView: View {
   @Environment(\.modelContext) private var modelContext
   @Environment(\.dismiss) var dismiss
+  @EnvironmentObject private var authService: AuthService
 
   // Optional card for edit mode
   var cardToEdit: Card?
@@ -18,6 +19,11 @@ struct AddCardView: View {
   @State private var content = ""
   @State private var selectedWordSet: WordSet?
   
+  // AI 生成
+  @State private var aiPrompt = ""
+  @State private var isAIGenerating = false
+  @State private var aiErrorMessage: String?
+  
   // Computed property to determine if we're in edit mode
   private var isEditMode: Bool {
     cardToEdit != nil
@@ -26,6 +32,34 @@ struct AddCardView: View {
   var body: some View {
     NavigationStack {
       Form {
+        // AI 生成區塊（僅在「新增」模式顯示）：依主題產生多張單字卡，歸於同一單字集
+        if !isEditMode {
+          Section {
+            TextField("輸入主題", text: $aiPrompt)
+              .disabled(isAIGenerating)
+            if let message = aiErrorMessage {
+              Text(message)
+                .font(.caption)
+                .foregroundStyle(.red)
+            }
+            Button {
+              Task { await generateCardsWithAI() }
+            } label: {
+              HStack {
+                if isAIGenerating {
+                  ProgressView()
+                    .scaleEffect(0.9)
+                }
+                Text(isAIGenerating ? "產生中…" : "用 AI 產生單字集")
+              }
+              .frame(maxWidth: .infinity)
+            }
+            .disabled(aiPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isAIGenerating)
+          } header: {
+            Text("AI 產生")
+          }
+        }
+
         Section(header: Text("基本資訊")) {
           TextField("標題 (例如：Knowledge)", text: $title)
         }
@@ -90,6 +124,50 @@ struct AddCardView: View {
           selectedWordSet = wordSet
         }
       }
+    }
+  }
+
+  /// 依主題用 AI 產生多張單字卡，寫入所選單字集（或新建單字集），然後關閉畫面。
+  private func generateCardsWithAI() async {
+    aiErrorMessage = nil
+    isAIGenerating = true
+    defer { isAIGenerating = false }
+
+    print("[AddCardView] AI generate: isLoggedIn=\(authService.isLoggedIn)")
+
+    let service = AIService(client: authService.getClient())
+    do {
+      let items = try await service.generateCards(prompt: aiPrompt)
+      guard !items.isEmpty else {
+        aiErrorMessage = "未產生任何單字卡，請換個主題再試"
+        return
+      }
+
+      // 決定要加入的單字集：已選 > 進入時帶入 > 依主題新建
+      let targetSet: WordSet
+      if let existing = selectedWordSet ?? wordSet {
+        targetSet = existing
+      } else {
+        let setName = String(aiPrompt.prefix(30)).trimmingCharacters(in: .whitespacesAndNewlines)
+        targetSet = WordSet(title: setName.isEmpty ? "AI 單字集" : setName)
+        modelContext.insert(targetSet)
+      }
+
+      for item in items {
+        let card = Card(
+          title: item.word,
+          content: item.markdownContent,
+          wordSet: targetSet
+        )
+        modelContext.insert(card)
+      }
+
+      try modelContext.save()
+      WidgetReloader.reloadAll()
+      aiErrorMessage = nil
+      dismiss()
+    } catch {
+      aiErrorMessage = error.localizedDescription
     }
   }
 }

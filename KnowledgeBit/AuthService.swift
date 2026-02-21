@@ -54,11 +54,12 @@ final class AuthService: ObservableObject {
     let authOptions = SupabaseClientOptions.AuthOptions(emitLocalSessionAsInitialSession: true)
     let options = SupabaseClientOptions(auth: authOptions)
     
-    client = SupabaseClient(
+    let newClient: SupabaseClient = SupabaseClient(
       supabaseURL: SupabaseConfig.url,
       supabaseKey: SupabaseConfig.anonKey,
       options: options
     )
+    client = newClient
     authTask = Task { await observeAuthState() }
   }
   
