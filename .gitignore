@@ -27,5 +27,28 @@ xcuserdata/
 .LSOverride
 Thumbs.db
 
-# Env / 敏感設定（若把真實 Supabase key 放在獨立檔可取消註解）
-# KnowledgeBit/SupabaseConfig.swift
+# Env / 敏感設定
+.env
+.env.*
+!.env.example
+*.xcconfig.local
+Secrets.xcconfig
+
+# Provisioning & 憑證（切勿 Commit）
+*.mobileprovision
+*.provisionprofile
+*.p12
+*.jks
+*.keystore
+*.certSigningRequest
+distribution_certificates/
+development_certificates/
+
+# 真實 Supabase 設定（請用 SupabaseConfig.example 複製為 SupabaseConfig.swift 並填入本地 key，勿提交）
+KnowledgeBit/SupabaseConfig.swift
+
+# Xcode 用戶專屬（已含 xcuserdata/，補充分項）
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
