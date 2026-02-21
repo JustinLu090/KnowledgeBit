@@ -26,7 +26,7 @@ interface QuizQuestionItem {
 }
 
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
-const MAX_WORDS = 30;
+const MAX_WORDS = 15;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -74,7 +74,7 @@ Deno.serve(async (req) => {
 - "correct_answer": 正確單字（字串）
 - "options": 長度為 4 的字串陣列，包含正確答案與三個干擾項
 
-請依清單產出約 5～10 題（視單字數量），每題對應不同單字。回傳格式範例：
+請依清單產出 3～5 題即可，每題對應不同單字。回傳格式範例：
 [{"sentence_with_blank":"The ___ is on the table.","correct_answer":"book","options":["pen","book","cup","key"]}]`;
 
     const response = await fetch(`${GEMINI_URL}?key=${apiKey}`, {

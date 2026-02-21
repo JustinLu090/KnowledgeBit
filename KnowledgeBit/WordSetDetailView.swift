@@ -133,6 +133,9 @@ struct WordSetDetailView: View {
         Text("正在產生題目…")
           .font(.headline)
           .foregroundStyle(.secondary)
+        Text("可能需要 30～60 秒，請稍候")
+          .font(.caption)
+          .foregroundStyle(.tertiary)
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
     } else if let err = quizGenerateError {
@@ -145,11 +148,22 @@ struct WordSetDetailView: View {
           .foregroundStyle(.secondary)
           .multilineTextAlignment(.center)
           .padding(.horizontal)
-        Button("關閉") {
-          showingChoiceQuiz = false
-          quizGenerateError = nil
+        if err.contains("timed out") || err.contains("逾時") {
+          Text("可點「重試」再試一次（第二次通常較快）")
+            .font(.caption)
+            .foregroundStyle(.tertiary)
         }
-        .padding()
+        HStack(spacing: 16) {
+          Button("重試") {
+            quizGenerateError = nil
+            startChoiceQuiz()
+          }
+          Button("關閉") {
+            showingChoiceQuiz = false
+            quizGenerateError = nil
+          }
+          .padding()
+        }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
     } else if let q = generatedQuestions, !q.isEmpty {
