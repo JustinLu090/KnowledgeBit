@@ -32,10 +32,10 @@ struct AddCardView: View {
   var body: some View {
     NavigationStack {
       Form {
-        // AI 生成區塊（僅在「新增」模式顯示）：依主題產生多張單字卡，歸於同一單字集
+        // AI 生成區塊：可輸入一段 prompt（可中英混用），產生多張單字卡
         if !isEditMode {
           Section {
-            TextField("輸入主題", text: $aiPrompt)
+            TextField("描述想學的單字範圍", text: $aiPrompt)
               .disabled(isAIGenerating)
             if let message = aiErrorMessage {
               Text(message)
@@ -57,6 +57,8 @@ struct AddCardView: View {
             .disabled(aiPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isAIGenerating)
           } header: {
             Text("AI 產生")
+          } footer: {
+            Text("可輸入一段說明或主題，AI 依內容產生多張單字卡。")
           }
         }
 
@@ -64,14 +66,6 @@ struct AddCardView: View {
           TextField("標題 (例如：Knowledge)", text: $title)
         }
         
-        Section(header: Text("單字集")) {
-          Picker("選擇單字集", selection: $selectedWordSet) {
-            Text("無").tag(nil as WordSet?)
-            ForEach(allWordSets, id: \.id) { wordSet in
-              Text(wordSet.title).tag(wordSet as WordSet?)
-            }
-          }
-        }
 
         Section(header: Text("詳細筆記 (Markdown)")) {
           TextEditor(text: $content)

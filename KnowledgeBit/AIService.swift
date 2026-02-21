@@ -10,11 +10,11 @@ struct GeneratedCardItem: Decodable {
   let definition: String
   let example_sentence: String
 
-  /// 轉成 Card 用的 Markdown 內容（定義 + 例句）
+  /// 轉成 Card 用的內容（定義 + 例句，純文字標題不含 Markdown 符號）
   var markdownContent: String {
     var parts: [String] = []
-    if !definition.isEmpty { parts.append("**定義**\n\n\(definition)") }
-    if !example_sentence.isEmpty { parts.append("**例句**\n\n\(example_sentence)") }
+    if !definition.isEmpty { parts.append("定義\n\n\(definition)") }
+    if !example_sentence.isEmpty { parts.append("例句\n\n\(example_sentence)") }
     return parts.isEmpty ? "(無內容)" : parts.joined(separator: "\n\n")
   }
 }
