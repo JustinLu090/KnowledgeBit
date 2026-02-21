@@ -1,8 +1,9 @@
 // AIService.swift
-// 透過 Supabase Edge Function 呼叫 Google Gemini 產生多張單字卡，API Key 存放在 Supabase Secrets，不放在 App 內。
+// 透過 Supabase Edge Function 呼叫 Google Gemini 產生多張單字卡與選擇題，API Key 存放在 Supabase Secrets。
 
 import Foundation
 import Supabase
+import SwiftData
 
 /// 單張 AI 產生的單字卡（與 Edge Function 回傳的陣列元素對應）
 struct GeneratedCardItem: Decodable {
@@ -22,6 +23,29 @@ struct GeneratedCardItem: Decodable {
 /// Edge Function 回傳格式：多張單字卡陣列
 struct GenerateCardsResponse: Decodable {
   let cards: [GeneratedCardItem]
+}
+
+/// 單題選擇題（挖空句 + 四選一），與 generate-quiz 回傳格式對應
+struct ChoiceQuestion: Decodable {
+  let sentence_with_blank: String
+  let correct_answer: String
+  let options: [String]
+}
+
+/// generate-quiz 回傳格式
+struct GenerateQuizResponse: Decodable {
+  let questions: [ChoiceQuestion]
+}
+
+/// 送給 generate-quiz 的單筆單字
+struct QuizWordPayload: Encodable {
+  let word: String
+  let definition: String?
+}
+
+/// generate-quiz 請求 body
+struct GenerateQuizRequest: Encodable {
+  let words: [QuizWordPayload]
 }
 
 @MainActor
@@ -65,6 +89,36 @@ final class AIService {
     }
   }
 
+  /// 依單字集（卡片）產生選擇題：挖空句 + 四選一。
+  /// - Parameter cards: 單字集的卡片（至少 2 張較佳）
+  /// - Returns: 題目陣列，每題含 sentence_with_blank、correct_answer、options（4 個）
+  func generateQuizQuestions(cards: [Card]) async throws -> [ChoiceQuestion] {
+    guard cards.count >= 1 else {
+      throw AIServiceError.insufficientCards
+    }
+    let words = cards.prefix(30).map { card -> QuizWordPayload in
+      let def = card.content
+        .split(separator: "\n")
+        .first
+        .map(String.init)
+        .map { $0.trimmingCharacters(in: .whitespaces) }
+      let definition: String? = def.flatMap { d in d.isEmpty ? nil : String(d.prefix(300)) }
+      return QuizWordPayload(word: card.title, definition: definition)
+    }
+    let request = GenerateQuizRequest(words: words)
+    let options = FunctionInvokeOptions(body: request)
+
+    do {
+      let response: GenerateQuizResponse = try await client.functions.invoke("generate-quiz", options: options)
+      return response.questions
+    } catch {
+      print("[AIService] generateQuizQuestions failed: \(error)")
+      if let body = Self.extractResponseBody(from: error) { print("[AIService] Response body: \(body)") }
+      if let urlError = error as? URLError { throw AIServiceError.network(urlError) }
+      throw AIServiceError.invokeFailed(error)
+    }
+  }
+
   /// 從 SDK 的 error 裡遞迴找出 Data 並轉成字串（用於印出 502/500 的 response body）
   private static func extractResponseBody(from error: Error) -> String? {
     func findData(_ subject: Any, depth: Int) -> Data? {
@@ -83,6 +137,7 @@ final class AIService {
 
 enum AIServiceError: LocalizedError {
   case emptyPrompt
+  case insufficientCards
   case network(URLError)
   case invokeFailed(Error)
 
@@ -90,6 +145,8 @@ enum AIServiceError: LocalizedError {
     switch self {
     case .emptyPrompt:
       return "請輸入主題或描述"
+    case .insufficientCards:
+      return "至少需要一張單字卡才能產生題目"
     case .network(let urlError):
       return "網路錯誤：\(urlError.localizedDescription)"
     case .invokeFailed(let error):
