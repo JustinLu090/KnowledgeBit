@@ -48,6 +48,12 @@ struct QuizWordPayload: Encodable {
 /// generate-quiz 請求 body
 struct GenerateQuizRequest: Encodable {
   let words: [QuizWordPayload]
+  /// 選填：單字集目標語言（如 "日文"、"韓文"、"英文"），供 AI 出題語言對應
+  let word_set: WordSetLanguagePayload?
+}
+
+struct WordSetLanguagePayload: Encodable {
+  let language: String
 }
 
 @MainActor
@@ -92,9 +98,11 @@ final class AIService {
   }
 
   /// 依單字集（卡片）產生選擇題：挖空句 + 四選一。
-  /// - Parameter cards: 單字集的卡片（至少 2 張較佳）
+  /// - Parameters:
+  ///   - cards: 單字集的卡片（至少 2 張較佳）
+  ///   - targetLanguage: 選填，單字集目標語言（如 "日文"、"韓文"），與單字集標題一致時可傳入以確保出題語言正確
   /// - Returns: 題目陣列，每題含 sentence_with_blank、correct_answer、options（4 個）
-  func generateQuizQuestions(cards: [Card]) async throws -> [ChoiceQuestion] {
+  func generateQuizQuestions(cards: [Card], targetLanguage: String? = nil) async throws -> [ChoiceQuestion] {
     guard cards.count >= 1 else {
       throw AIServiceError.insufficientCards
     }
@@ -107,7 +115,9 @@ final class AIService {
       let definition: String? = def.flatMap { d in d.isEmpty ? nil : String(d.prefix(300)) }
       return QuizWordPayload(word: card.title, definition: definition)
     }
-    let request = GenerateQuizRequest(words: words)
+    let lang = (targetLanguage ?? "").trimmingCharacters(in: .whitespaces)
+    let wordSetPayload: WordSetLanguagePayload? = lang.isEmpty ? nil : WordSetLanguagePayload(language: lang)
+    let request = GenerateQuizRequest(words: words, word_set: wordSetPayload)
     let options = FunctionInvokeOptions(body: request)
 
     do {

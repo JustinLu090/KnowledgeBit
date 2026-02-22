@@ -13,6 +13,7 @@ struct ChoiceQuizView: View {
   @State private var selectedOption: String?
   @State private var hasAnswered = false
   @State private var showResult = false
+  @State private var showExitConfirmation = false
   /// 每題選項順序（onAppear 時打亂一次，避免正確答案總在同一位置）
   @State private var shuffledOptionsPerQuestion: [[String]] = []
 
@@ -52,6 +53,25 @@ struct ChoiceQuizView: View {
         )
       } else if let q = currentQuestion {
         VStack(spacing: 24) {
+          // 左上角退出鈕
+          HStack {
+            Button {
+              if currentIndex > 0 || hasAnswered {
+                showExitConfirmation = true
+              } else {
+                dismiss()
+              }
+            } label: {
+              Image(systemName: "xmark")
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 44, height: 44)
+            }
+            Spacer()
+          }
+          .padding(.horizontal)
+          .padding(.top, 8)
+
           Text("第 \(currentIndex + 1) / \(questions.count) 題")
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -106,6 +126,12 @@ struct ChoiceQuizView: View {
           Spacer()
         }
       }
+    }
+    .alert("確定要退出嗎？", isPresented: $showExitConfirmation) {
+      Button("取消", role: .cancel) {}
+      Button("確定", role: .destructive) { dismiss() }
+    } message: {
+      Text("目前進度將不會儲存。")
     }
     .onAppear {
       if shuffledOptionsPerQuestion.isEmpty {

@@ -110,7 +110,7 @@ struct WordSetDetailView: View {
     generatedQuestions = nil
     Task {
       do {
-        let q = try await AIService(client: authService.getClient()).generateQuizQuestions(cards: cards)
+        let q = try await AIService(client: authService.getClient()).generateQuizQuestions(cards: cards, targetLanguage: wordSet.title)
         await MainActor.run {
           generatedQuestions = q
           isGeneratingQuiz = false
