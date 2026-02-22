@@ -25,11 +25,13 @@ struct GenerateCardsResponse: Decodable {
   let cards: [GeneratedCardItem]
 }
 
-/// 單題選擇題（挖空句 + 四選一），與 generate-quiz 回傳格式對應
+/// 單題選擇題（挖空句 + 四選一 + 詳解），與 generate-quiz 回傳格式對應
 struct ChoiceQuestion: Decodable {
   let sentence_with_blank: String
   let correct_answer: String
   let options: [String]
+  /// 詳解：為何正確、干擾項為何錯誤、語法或單字補充（由 AI 產生）
+  let explanation: String?
 }
 
 /// generate-quiz 回傳格式

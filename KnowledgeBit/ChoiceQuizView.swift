@@ -70,6 +70,25 @@ struct ChoiceQuizView: View {
           }
           .padding(.horizontal, 20)
 
+          if hasAnswered, let explanation = q.explanation, !explanation.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+              Text("詳解")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundStyle(.secondary)
+              Text(explanation)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+            .background(Color(.tertiarySystemFill))
+            .cornerRadius(10)
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
+          }
+
           if hasAnswered {
             Button(action: goToNext) {
               Text(currentIndex < questions.count - 1 ? "下一題" : "看結果")
