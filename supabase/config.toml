@@ -5,3 +5,6 @@
 # 注意：關閉後任何人只要知道 URL 都能呼叫，僅建議開發／測試使用
 [functions.generate-card]
 verify_jwt = false
+
+[functions.generate-quiz]
+verify_jwt = false

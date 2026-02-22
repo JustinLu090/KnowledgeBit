@@ -24,6 +24,7 @@ struct QuizView: View {
   @State private var isFlipped = false
   @State private var showResult = false
   @State private var score = 0
+  @State private var showExitConfirmation = false
 
   // 為了不破壞原始順序，我們在出現時把卡片打亂
   @State private var shuffledCards: [Card] = []
@@ -89,6 +90,25 @@ struct QuizView: View {
       } else {
         // 測驗進行中的畫面
         VStack {
+          // 左上角退出鈕
+          HStack {
+            Button {
+              if currentCardIndex > 0 || isFlipped {
+                showExitConfirmation = true
+              } else {
+                dismiss()
+              }
+            } label: {
+              Image(systemName: "xmark")
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 44, height: 44)
+            }
+            Spacer()
+          }
+          .padding(.horizontal)
+          .padding(.top, 8)
+
           // 上方進度條
           if !shuffledCards.isEmpty {
             Text("Question \(currentCardIndex + 1) / \(shuffledCards.count)")
@@ -150,6 +170,12 @@ struct QuizView: View {
           }
         }
       }
+    }
+    .alert("確定要退出嗎？", isPresented: $showExitConfirmation) {
+      Button("取消", role: .cancel) {}
+      Button("確定", role: .destructive) { dismiss() }
+    } message: {
+      Text("目前進度將不會儲存。")
     }
     .onAppear {
       // 進入畫面時，將資料庫的卡片洗牌，並記錄開始時間（供每日任務學習時長）
