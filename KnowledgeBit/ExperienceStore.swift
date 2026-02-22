@@ -11,6 +11,7 @@ import Foundation
 import SwiftUI
 import Combine
 import Supabase
+import WidgetKit
 
 class ExperienceStore: ObservableObject {
   // App Group UserDefaults
@@ -21,24 +22,57 @@ class ExperienceStore: ObservableObject {
   weak var authService: AuthService?
   
   // Published 屬性，UI 會自動更新
+  // 注意：@Published 的 didSet 會在屬性變更時立即執行，通常已在主線程
+  // 優化：不在 didSet 中觸發 Widget 刷新，改為在 addExp 完成後統一刷新，避免重複呼叫
   @Published var level: Int {
     didSet {
-      userDefaults.set(level, forKey: "userLevel")
-      print("📊 [EXP] Level 更新: \(level)")
+      // UserDefaults 操作（@Published 通常已在主線程，但為安全起見確保在主線程）
+      if Thread.isMainThread {
+        userDefaults.set(level, forKey: AppGroup.Keys.level)
+        userDefaults.synchronize()
+        print("📊 [EXP] Level 更新: \(level)")
+      } else {
+        DispatchQueue.main.async { [weak self] in
+          guard let self = self else { return }
+          self.userDefaults.set(self.level, forKey: AppGroup.Keys.level)
+          self.userDefaults.synchronize()
+          print("📊 [EXP] Level 更新: \(self.level)")
+        }
+      }
     }
   }
   
   @Published var exp: Int {
     didSet {
-      userDefaults.set(exp, forKey: "userExp")
-      print("📊 [EXP] EXP 更新: \(exp)")
+      if Thread.isMainThread {
+        userDefaults.set(exp, forKey: AppGroup.Keys.exp)
+        userDefaults.synchronize()
+        print("📊 [EXP] EXP 更新: \(exp)")
+      } else {
+        DispatchQueue.main.async { [weak self] in
+          guard let self = self else { return }
+          self.userDefaults.set(self.exp, forKey: AppGroup.Keys.exp)
+          self.userDefaults.synchronize()
+          print("📊 [EXP] EXP 更新: \(self.exp)")
+        }
+      }
     }
   }
   
   @Published var expToNext: Int {
     didSet {
-      userDefaults.set(expToNext, forKey: "expToNext")
-      print("📊 [EXP] expToNext 更新: \(expToNext)")
+      if Thread.isMainThread {
+        userDefaults.set(expToNext, forKey: AppGroup.Keys.expToNext)
+        userDefaults.synchronize()
+        print("📊 [EXP] expToNext 更新: \(expToNext)")
+      } else {
+        DispatchQueue.main.async { [weak self] in
+          guard let self = self else { return }
+          self.userDefaults.set(self.expToNext, forKey: AppGroup.Keys.expToNext)
+          self.userDefaults.synchronize()
+          print("📊 [EXP] expToNext 更新: \(self.expToNext)")
+        }
+      }
     }
   }
   
@@ -62,9 +96,9 @@ class ExperienceStore: ObservableObject {
     self.userDefaults = sharedDefaults
     
     // 讀取儲存的值，若無則使用預設值
-    let savedLevel = max(userDefaults.integer(forKey: "userLevel"), 1) // 至少為 1
-    let savedExp = max(userDefaults.integer(forKey: "userExp"), 0) // 至少為 0
-    let savedExpToNext = userDefaults.integer(forKey: "expToNext")
+    let savedLevel = max(userDefaults.integer(forKey: AppGroup.Keys.level), 1) // 至少為 1
+    let savedExp = max(userDefaults.integer(forKey: AppGroup.Keys.exp), 0) // 至少為 0
+    let savedExpToNext = userDefaults.integer(forKey: AppGroup.Keys.expToNext)
     
     // 初始化 stored properties
     self.level = savedLevel
@@ -77,7 +111,7 @@ class ExperienceStore: ObservableObject {
       // 使用靜態方法計算，避免在初始化前使用 self
       let calculatedExpToNext = ExperienceStore.calculateExpToNext(for: savedLevel)
       self.expToNext = calculatedExpToNext
-      userDefaults.set(calculatedExpToNext, forKey: "expToNext")
+      userDefaults.set(calculatedExpToNext, forKey: AppGroup.Keys.expToNext)
     }
     
     print("📊 [EXP] 初始化完成 - Level: \(level), EXP: \(exp)/\(expToNext)")
@@ -116,6 +150,16 @@ class ExperienceStore: ObservableObject {
       print("📈 [EXP] 獲得 \(delta) EXP, 當前: \(exp)/\(expToNext) (Level \(level))")
     }
     
+    // 統一觸發 Widget 刷新（只在 addExp 完成後刷新一次，避免重複）
+    // 確保在主線程執行
+    if Thread.isMainThread {
+      WidgetReloader.reloadAll()
+    } else {
+      DispatchQueue.main.async {
+        WidgetReloader.reloadAll()
+      }
+    }
+    
     // 自動同步到雲端（背景執行，不阻塞 UI）
     Task {
       await syncToCloud()
@@ -129,6 +173,77 @@ class ExperienceStore: ObservableObject {
   }
   
   // MARK: - 雲端同步
+  
+  /// 從 Supabase 雲端載入等級與經驗值並同步到 App Group（App 啟動或登入時呼叫）
+  /// 如果雲端有更新的資料，會覆蓋本地資料
+  @MainActor
+  func loadFromCloud() async {
+    // 檢查是否有登入
+    guard let authService = authService,
+          authService.isLoggedIn,
+          let userId = authService.currentUserId else {
+      print("⚠️ [Cloud Load] 未登入或無法取得 user.id，跳過雲端載入")
+      return
+    }
+    
+    let client = authService.getClient()
+    
+    do {
+      // 從 Supabase 查詢用戶資料
+      struct ProfileResponse: Decodable {
+        let level: Int?
+        let current_exp: Int?
+        
+        enum CodingKeys: String, CodingKey {
+          case level
+          case current_exp = "current_exp"
+        }
+      }
+      
+      let response: [ProfileResponse] = try await client
+        .from("user_profiles")
+        .select("\(AppGroup.SupabaseFields.level), \(AppGroup.SupabaseFields.currentExp)")
+        .eq(AppGroup.SupabaseFields.userId, value: userId)
+        .execute()
+        .value
+      
+      if let profile = response.first,
+         let cloudLevel = profile.level,
+         let cloudExp = profile.current_exp {
+        // 如果雲端資料存在，更新本地資料
+        let oldLevel = level
+        let oldExp = exp
+        
+        // 更新等級和經驗值
+        level = max(cloudLevel, 1) // 至少為 1
+        exp = max(cloudExp, 0) // 至少為 0
+        
+        // 計算 expToNext
+        expToNext = ExperienceStore.calculateExpToNext(for: level)
+        
+        // 使用批次同步方法，避免多次刷新
+        // 不立即刷新 Widget，因為可能還有其他資料需要同步
+        await MainActor.run {
+          authService.saveExpToAppGroup(level: level, exp: exp, expToNext: expToNext, shouldReloadWidget: false)
+        }
+        
+        if oldLevel != level || oldExp != exp {
+          print("✅ [Cloud Load] 已從雲端載入並更新 - Level: \(oldLevel) → \(level), EXP: \(oldExp) → \(exp)")
+        } else {
+          print("✅ [Cloud Load] 雲端資料與本地一致 - Level: \(level), EXP: \(exp)")
+        }
+        
+        // 在資料同步完成後，統一觸發一次 Widget 刷新
+        await MainActor.run {
+          WidgetReloader.reloadAll()
+        }
+      } else {
+        print("⚠️ [Cloud Load] 雲端無用戶資料，使用本地資料")
+      }
+    } catch {
+      print("❌ [Cloud Load] 載入失敗: \(error.localizedDescription)")
+    }
+  }
   
   /// 將等級與經驗值同步到 Supabase 雲端
   /// 使用 upsert 確保資料存在時更新，不存在時插入
@@ -151,6 +266,13 @@ class ExperienceStore: ObservableObject {
         let level: Int
         let current_exp: Int
         let updated_at: Date
+        
+        enum CodingKeys: String, CodingKey {
+          case display_name
+          case level
+          case current_exp
+          case updated_at
+        }
       }
       struct ProfileInsert: Encodable {
         let user_id: UUID
@@ -158,19 +280,44 @@ class ExperienceStore: ObservableObject {
         let level: Int
         let current_exp: Int
         let updated_at: Date
+        
+        enum CodingKeys: String, CodingKey {
+          case user_id
+          case display_name
+          case level
+          case current_exp
+          case updated_at
+        }
       }
-      let insertPayload = ProfileInsert(user_id: userId, display_name: displayName, level: level, current_exp: exp, updated_at: Date())
+      let insertPayload = ProfileInsert(
+        user_id: userId,
+        display_name: displayName,
+        level: level,
+        current_exp: exp,
+        updated_at: Date()
+      )
       do {
         try await client.from("user_profiles").insert(insertPayload).execute()
       } catch {
-        let updatePayload = ProfileUpdate(display_name: displayName, level: level, current_exp: exp, updated_at: Date())
+        let updatePayload = ProfileUpdate(
+          display_name: displayName,
+          level: level,
+          current_exp: exp,
+          updated_at: Date()
+        )
         try await client
           .from("user_profiles")
           .update(updatePayload)
-          .eq("user_id", value: userId)
+          .eq(AppGroup.SupabaseFields.userId, value: userId)
           .execute()
       }
       print("✅ [Cloud Sync] 成功同步等級與經驗值到雲端 - Level: \(level), EXP: \(exp)")
+      
+      // 同步成功後，將資料寫入 App Group（供 Widget 讀取）
+      // 使用批次同步，不立即刷新（因為 addExp 已經會觸發刷新）
+      await MainActor.run {
+        authService.saveExpToAppGroup(level: level, exp: exp, expToNext: expToNext, shouldReloadWidget: false)
+      }
     } catch {
       print("❌ [Cloud Sync] 同步失敗: \(error.localizedDescription)")
     }

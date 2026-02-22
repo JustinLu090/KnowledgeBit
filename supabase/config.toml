@@ -1,0 +1,10 @@
+# Supabase 專案設定（供 CLI 部署 Edge Functions 時使用）
+# 若用 Dashboard 部署，需在該 function 的設定中手動關閉「Verify JWT」
+
+# 關閉 generate-card 的 JWT 驗證，避免 App 呼叫時回傳 401
+# 注意：關閉後任何人只要知道 URL 都能呼叫，僅建議開發／測試使用
+[functions.generate-card]
+verify_jwt = false
+
+[functions.generate-quiz]
+verify_jwt = false
