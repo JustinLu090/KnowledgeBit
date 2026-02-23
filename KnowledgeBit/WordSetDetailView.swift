@@ -193,7 +193,7 @@ struct WordSetDetailView: View {
     try? modelContext.save()
     questService.recordWordSetCompleted(experienceStore: experienceStore)
     let accuracy = total > 0 ? Int(Double(score) / Double(total) * 100) : 0
-    questService.recordWordSetQuizResult(accuracyPercent: accuracy, isPerfect: (total > 0 && score == total), experienceStore: experienceStore)
+    questService.recordWordSetQuizResult(accuracyPercent: accuracy, isPerfect: (total > 0 && score == total), quizType: .multipleChoice, experienceStore: experienceStore)
   }
   
   private func deleteCards(offsets: IndexSet) {

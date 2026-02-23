@@ -131,6 +131,12 @@ KnowledgeBit/
     └── KnowledgeWidget.swift  # Interactive widget with AppIntents
 ```
 
+## Security / 敏感設定
+
+- **Supabase**：請將 `SupabaseConfig.example.txt` 的內容複製到新檔 `SupabaseConfig.swift`，並到 [Supabase Dashboard](https://supabase.com/dashboard) → Project Settings → API 填入 **Project URL** 與 **anon public key**。`SupabaseConfig.swift` 已列於 `.gitignore`，請勿提交。
+- **若曾將 `SupabaseConfig.swift` 提交至版控**：請在 Supabase Dashboard 的 API 設定中**重新產生 anon key**，並更新本機的 `SupabaseConfig.swift`，以避免舊 key 外洩風險。
+- **Edge Functions（Gemini）**：API Key 請僅在 Supabase 的 Edge Function Secrets 中設定 `GEMINI_API_KEY`，勿寫入程式碼。詳見 `AI_SETUP.md`。
+
 ## Requirements
 
 - iOS 17.0+

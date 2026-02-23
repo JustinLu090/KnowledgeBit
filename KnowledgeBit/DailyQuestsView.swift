@@ -61,7 +61,7 @@ struct QuestCardView: View {
       
       // Middle: Title and progress bar
       VStack(alignment: .leading, spacing: 6) {
-        Text(quest.title)
+        Text(quest.displayTitle)
           .font(.system(size: 15, weight: .medium))
           .foregroundStyle(quest.isCompleted ? .secondary : .primary)
         

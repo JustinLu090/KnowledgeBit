@@ -74,7 +74,7 @@ struct QuizView: View {
               questService.recordWordSetCompleted(experienceStore: experienceStore)
               let total = shuffledCards.count
               let accuracy = total > 0 ? Int(Double(score) / Double(total) * 100) : 0
-              questService.recordWordSetQuizResult(accuracyPercent: accuracy, isPerfect: (total > 0 && score == total), experienceStore: experienceStore)
+              questService.recordWordSetQuizResult(accuracyPercent: accuracy, isPerfect: (total > 0 && score == total), quizType: .general, experienceStore: experienceStore)
             } else {
               // 每日測驗：完成一次 → 20 EXP，並計入「獲得 30 經驗值」進度
               if taskService.completeQuizTask(experienceStore: experienceStore) {
