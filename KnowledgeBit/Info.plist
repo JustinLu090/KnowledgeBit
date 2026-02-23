@@ -22,7 +22,16 @@
 				<string>com.googleusercontent.apps.275005599081-ujeurl6h4jhjvmss6uh8pm1b379sa9k9</string>
 			</array>
 		</dict>
-		<dict/>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>KnowledgeBit Invite</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>knowledgebit</string>
+			</array>
+		</dict>
 	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>

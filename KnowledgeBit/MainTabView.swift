@@ -8,6 +8,7 @@ struct MainTabView: View {
   @Environment(\.modelContext) private var modelContext
   @EnvironmentObject var authService: AuthService
   @EnvironmentObject var dailyQuestService: DailyQuestService
+  @EnvironmentObject var pendingInviteStore: PendingInviteStore
   @StateObject private var communityViewModel = CommunityViewModel()
   @State private var selectedTab = 0
   
@@ -76,7 +77,7 @@ struct MainTabView: View {
 
   @ViewBuilder
   private var communityTab: some View {
-    let base = CommunityView(viewModel: communityViewModel)
+    let base = CommunityView(viewModel: communityViewModel, pendingInviteStore: pendingInviteStore)
       .tabItem {
         Label("社群", systemImage: "person.3.fill")
       }

@@ -15,8 +15,18 @@ final class CommunityViewModel: ObservableObject {
   @Published var errorMessage: String?
   @Published var searchQuery = ""
 
+  /// 邀請碼與分享（連結 / QR Code）
+  @Published private(set) var myInviteCode: String?
+  @Published private(set) var inviteQRImage: UIImage?
+
   /// 待處理請求數量（用於 tab badge）
   var pendingCount: Int { pendingRequests.count }
+
+  /// 分享連結字串（需先載入 myInviteCode）
+  var inviteShareURL: String? {
+    guard let code = myInviteCode else { return nil }
+    return InviteShareHelper.shareURL(inviteCode: code)
+  }
 
   // MARK: - 載入資料
 
@@ -51,10 +61,55 @@ final class CommunityViewModel: ObservableObject {
     }
   }
 
-  /// 一次載入好友與待處理請求
+  /// 一次載入好友與待處理請求，並更新邀請碼與 QR
   func refresh(authService: AuthService) async {
     await loadFriends(authService: authService)
     await loadPendingRequests(authService: authService)
+    await loadInviteCode(authService: authService)
+  }
+
+  /// 載入目前使用者的 invite_code 並產生 QR 圖
+  func loadInviteCode(authService: AuthService) async {
+    guard let currentUserId = authService.currentUserId else { return }
+    do {
+      let service = InviteService(authService: authService)
+      let code = try await service.fetchMyInviteCode(currentUserId: currentUserId)
+      myInviteCode = code
+      if let code = code {
+        let qrString = InviteShareHelper.appSchemeURL(inviteCode: code)?.absoluteString ?? InviteShareHelper.shareURL(inviteCode: code)
+        inviteQRImage = InviteShareHelper.qrImage(for: qrString, sideLength: 400)
+      } else {
+        inviteQRImage = nil
+      }
+    } catch {
+      myInviteCode = nil
+      inviteQRImage = nil
+      print("⚠️ [Community] fetchMyInviteCode 失敗: \(error)")
+    }
+  }
+
+  /// 依邀請碼查詢對方並發送好友請求
+  func sendFriendRequestByInviteCode(_ code: String, authService: AuthService) async {
+    guard let currentUserId = authService.currentUserId else { return }
+    errorMessage = nil
+    do {
+      let inviteService = InviteService(authService: authService)
+      guard let profile = try await inviteService.fetchProfileByInviteCode(code) else {
+        errorMessage = "找不到該邀請碼對應的使用者"
+        return
+      }
+      guard profile.userId != currentUserId else {
+        errorMessage = "無法加自己為好友"
+        return
+      }
+      let friendService = FriendService(authService: authService)
+      try await friendService.sendFriendRequest(to: profile.userId, currentUserId: currentUserId)
+      sentRequestReceiverIds.insert(profile.userId)
+      await loadPendingRequests(authService: authService)
+    } catch {
+      errorMessage = "發送失敗，請稍後再試"
+      print("⚠️ [Community] sendFriendRequestByInviteCode 失敗: \(error)")
+    }
   }
 
   // MARK: - 接受 / 拒絕請求

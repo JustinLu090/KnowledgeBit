@@ -6,6 +6,7 @@ import SwiftUI
 struct CommunityView: View {
   @EnvironmentObject var authService: AuthService
   @ObservedObject var viewModel: CommunityViewModel
+  @ObservedObject var pendingInviteStore: PendingInviteStore
   @FocusState private var isSearchFocused: Bool
   @State private var friendToDelete: FriendItem?
 
@@ -13,6 +14,8 @@ struct CommunityView: View {
     NavigationStack {
       ScrollView {
         VStack(spacing: 24) {
+          // 我的邀請連結與 QR Code
+          inviteSection
           // 搜尋欄
           searchSection
 
@@ -60,6 +63,78 @@ struct CommunityView: View {
       .refreshable {
         await viewModel.refresh(authService: authService)
       }
+      .alert("加入好友", isPresented: Binding(
+        get: { pendingInviteStore.inviteCode != nil },
+        set: { if !$0 { pendingInviteStore.clear() } }
+      )) {
+        Button("取消", role: .cancel) { pendingInviteStore.clear() }
+        Button("發送好友請求") {
+          if let code = pendingInviteStore.inviteCode {
+            Task { await viewModel.sendFriendRequestByInviteCode(code, authService: authService) }
+            pendingInviteStore.clear()
+          }
+        }
+      } message: {
+        if let name = pendingInviteStore.inviterDisplayName, !name.isEmpty {
+          Text("\(name) 邀請你加入 KnowledgeBit，是否要發送好友請求？")
+        } else if pendingInviteStore.inviteCode != nil {
+          Text("是否要依此邀請碼發送好友請求？")
+        }
+      }
+    }
+  }
+
+  // MARK: - 邀請連結與 QR Code
+
+  private var inviteSection: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text("我的邀請連結")
+        .font(.system(size: 20, weight: .semibold))
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 4)
+      VStack(spacing: 16) {
+        if let qr = viewModel.inviteQRImage {
+          Image(uiImage: qr)
+            .interpolation(.none)
+            .resizable()
+            .scaledToFit()
+            .frame(width: 200, height: 200)
+        }
+        if let urlString = viewModel.inviteShareURL {
+          Text(urlString)
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(.secondary)
+            .lineLimit(2)
+            .multilineTextAlignment(.center)
+          HStack(spacing: 12) {
+            Button {
+              UIPasteboard.general.string = urlString
+            } label: {
+              Label("複製連結", systemImage: "doc.on.doc")
+                .font(.system(size: 15, weight: .medium))
+            }
+            .buttonStyle(.bordered)
+            if let url = URL(string: urlString) {
+              ShareLink(item: url, subject: Text("邀請你加入 KnowledgeBit")) {
+                Label("分享", systemImage: "square.and.arrow.up")
+                  .font(.system(size: 15, weight: .medium))
+              }
+              .buttonStyle(.bordered)
+            }
+          }
+        } else if viewModel.isLoading {
+          ProgressView()
+            .scaleEffect(0.9)
+        } else {
+          Text("載入邀請碼中…")
+            .font(.system(size: 14))
+            .foregroundStyle(.tertiary)
+        }
+      }
+      .frame(maxWidth: .infinity)
+      .padding(16)
+      .background(Color(.secondarySystemGroupedBackground))
+      .cornerRadius(12)
     }
   }
 
@@ -309,6 +384,6 @@ private struct FriendRow: View {
 }
 
 #Preview {
-  CommunityView(viewModel: CommunityViewModel())
+  CommunityView(viewModel: CommunityViewModel(), pendingInviteStore: PendingInviteStore())
     .environmentObject(AuthService())
 }
