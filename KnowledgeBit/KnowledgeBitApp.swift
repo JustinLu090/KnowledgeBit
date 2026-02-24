@@ -117,13 +117,14 @@ struct KnowledgeBitApp: App {
     createModelContainer()
   }()
 
-  // 建立 ExperienceStore、TaskService、DailyQuestService、AuthService
+  // 建立 ExperienceStore、TaskService、DailyQuestService、AuthService、邀請 Deep Link 狀態
   @StateObject private var experienceStore = ExperienceStore()
   @StateObject private var taskService = TaskService()
   @StateObject private var dailyQuestService = DailyQuestService()
   @StateObject private var authService = AuthService()
+  @StateObject private var pendingInviteStore = PendingInviteStore()
   @Environment(\.scenePhase) private var scenePhase
-  
+
   var body: some Scene {
     WindowGroup {
       Group {
@@ -133,10 +134,21 @@ struct KnowledgeBitApp: App {
             .environmentObject(taskService)
             .environmentObject(dailyQuestService)
             .environmentObject(authService)
+            .environmentObject(pendingInviteStore)
             .onAppear {
               experienceStore.authService = authService
-              // App 啟動時強制以 Google/Auth 的 profile 比對並同步至 Supabase 與 App Group
-              Task { await authService.syncProfileFromAuthToSupabaseAndAppGroup() }
+              // 延遲 0.5 秒再同步，避免 nw_connection 尚未 ready 時發出請求（race condition）
+              Task {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                // 先同步 profile（不立即刷新）
+                await authService.syncProfileFromAuthToSupabaseAndAppGroup()
+                // 從 Supabase 載入用戶等級與經驗值並同步到 App Group（不立即刷新）
+                await experienceStore.loadFromCloud()
+                // 所有資料同步完成後，統一觸發一次 Widget 刷新
+                await MainActor.run {
+                  WidgetReloader.reloadAll()
+                }
+              }
             }
         } else {
           LoginView()
@@ -145,7 +157,19 @@ struct KnowledgeBitApp: App {
       }
       .animation(.easeInOut(duration: 0.2), value: authService.isLoggedIn)
       .onOpenURL { url in
-        // 處理 Google Sign-In callback URL
+        if let (code, _) = Self.parseInviteURL(url) {
+          Task { @MainActor in
+            if authService.isLoggedIn {
+              let inviteService = InviteService(authService: authService)
+              if let profile = try? await inviteService.fetchProfileByInviteCode(code) {
+                pendingInviteStore.setPending(inviteCode: code, inviterDisplayName: profile.displayName)
+              } else {
+                pendingInviteStore.setPending(inviteCode: code, inviterDisplayName: nil)
+              }
+            }
+          }
+          return
+        }
         GIDSignIn.sharedInstance.handle(url)
       }
       .onAppear {
@@ -157,11 +181,38 @@ struct KnowledgeBitApp: App {
     .onChange(of: scenePhase) { _, newPhase in
       if newPhase == .active {
         dailyQuestService.refreshIfNewDay()
-        // 回到前景時若已登入，強制同步 profile（與 Google/Auth 一致）
+        // 回到前景時若已登入，延遲同步 profile（避免 nw_connection 未 ready）
         if authService.isLoggedIn {
-          Task { await authService.syncProfileFromAuthToSupabaseAndAppGroup() }
+          Task {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            // 先同步 profile（不立即刷新）
+            await authService.syncProfileFromAuthToSupabaseAndAppGroup()
+            // 從 Supabase 載入用戶等級與經驗值並同步到 App Group（不立即刷新）
+            await experienceStore.loadFromCloud()
+            // 所有資料同步完成後，統一觸發一次 Widget 刷新
+            await MainActor.run {
+              WidgetReloader.reloadAll()
+            }
+          }
         }
       }
     }
+  }
+}
+
+// MARK: - 邀請連結解析（供 onOpenURL 使用）
+private extension KnowledgeBitApp {
+  /// 解析邀請連結，回傳 (invite_code, displayName 可選)。支援 https 邀請頁（與 InviteConstants.baseURL 同 host）與 knowledgebit://join/XXX
+  static func parseInviteURL(_ url: URL) -> (code: String, displayName: String?)? {
+    let scheme = url.scheme?.lowercased()
+    let host = url.host?.lowercased()
+    let path = url.path
+    let expectedHost = URL(string: InviteConstants.baseURL)?.host?.lowercased()
+    let isWeb = scheme == "https" && host == expectedHost && path.hasPrefix("/join/")
+    let isAppScheme = scheme == InviteConstants.urlScheme && host == "join"
+    guard isWeb || isAppScheme else { return nil }
+    let code = url.lastPathComponent.trimmingCharacters(in: .whitespaces)
+    guard !code.isEmpty, code.count <= 32 else { return nil }
+    return (code, nil)
   }
 }

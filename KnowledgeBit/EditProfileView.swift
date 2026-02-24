@@ -2,18 +2,21 @@
 // 編輯用戶個人資料（頭貼和名字）
 
 import SwiftUI
+import UIKit
 import SwiftData
 import PhotosUI
 
 struct EditProfileView: View {
   @Environment(\.dismiss) var dismiss
   @Environment(\.modelContext) private var modelContext
+  @EnvironmentObject var authService: AuthService
   let currentProfile: UserProfile?
   let userId: UUID?
-  
+
   @State private var displayName: String
   @State private var selectedPhoto: PhotosPickerItem?
   @State private var avatarImage: UIImage?
+  @State private var isSaving = false
   
   init(currentProfile: UserProfile?, userId: UUID?) {
     self.currentProfile = currentProfile
@@ -59,40 +62,52 @@ struct EditProfileView: View {
         }
         ToolbarItem(placement: .confirmationAction) {
           Button("完成") {
-            saveProfile()
-            dismiss()
+            Task { await saveProfile() }
           }
+          .disabled(isSaving)
         }
       }
     }
   }
   
-  private func saveProfile() {
+  private func saveProfile() async {
     guard let userId = userId else { return }
-    
-    // 將選擇的圖片轉換為 Data
+    isSaving = true
+    defer { isSaving = false }
+
     let avatarData = avatarImage?.jpegData(compressionQuality: 0.8)
-    
+    var avatarURLToSync: String? = currentProfile?.avatarURL
+
+    // 若有新選擇的頭貼，上傳至 Supabase Storage
+    if let avatarData = avatarData {
+      do {
+        avatarURLToSync = try await authService.uploadAvatar(userId: userId, imageData: avatarData)
+      } catch {
+        print("⚠️ [EditProfile] 頭貼上傳失敗: \(error)，僅同步名稱。請確認已建立 avatars bucket。")
+      }
+    }
+
+    // 儲存至本地 SwiftData
     if let profile = currentProfile {
-      // 更新現有資料
       profile.displayName = displayName
       if let avatarData = avatarData {
         profile.avatarData = avatarData
-        // 清除遠端 URL（因為現在使用本地資料）
-        profile.avatarURL = nil
+        profile.avatarURL = avatarURLToSync
       }
       profile.updatedAt = Date()
     } else {
-      // 創建新資料
       let profile = UserProfile(
         userId: userId,
         displayName: displayName,
         avatarData: avatarData,
-        avatarURL: nil
+        avatarURL: avatarURLToSync
       )
       modelContext.insert(profile)
     }
-    
     try? modelContext.save()
+
+    // 同步至 Supabase user_profiles 與 App Group
+    await authService.syncProfileToRemote(displayName: displayName, avatarURL: avatarURLToSync)
+    dismiss()
   }
 }

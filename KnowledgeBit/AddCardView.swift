@@ -1,19 +1,16 @@
+// AddCardView.swift
 import SwiftUI
 import SwiftData
-#if canImport(GoogleGenerativeAI)
-import GoogleGenerativeAI
-#endif
-import PhotosUI // 引入 PhotosUI
-import UIKit    // 引入 UIKit 以支援 UIImage 處理
-#if os(iOS)
 import WidgetKit
-#endif
 
 struct AddCardView: View {
   @Environment(\.modelContext) private var modelContext
   @Environment(\.dismiss) var dismiss
-  
+  @EnvironmentObject private var authService: AuthService
+
+  // Optional card for edit mode
   var cardToEdit: Card?
+  // Optional word set to assign card to
   var wordSet: WordSet?
   
   @Query(sort: \WordSet.title) private var allWordSets: [WordSet]
@@ -22,136 +19,57 @@ struct AddCardView: View {
   @State private var content = ""
   @State private var selectedWordSet: WordSet?
   
-  // --- A卡片種類
-  @State private var cardKind: CardKind = .qa
+  // AI 生成
+  @State private var aiPrompt = ""
+  @State private var isAIGenerating = false
+  @State private var aiErrorMessage: String?
   
-  // --- AI 文字生成狀態 ---
-  @State private var isGenerating = false
-  @State private var showAIPrompt = false
-  @State private var aiTopic = ""
-  
-  // --- AI 圖片生成狀態 ---
-  @State private var selectedPhotoItem: PhotosPickerItem? = nil
-  @State private var isProcessingImage = false
-  
-  // --- 錯誤處理 ---
-  @State private var aiErrorMessage = ""
-  @State private var showAIError = false
-  
+  // Computed property to determine if we're in edit mode
   private var isEditMode: Bool {
     cardToEdit != nil
   }
-  
-  private var canSave: Bool {
-    let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-    if cardKind == .quote {
-      return !trimmedTitle.isEmpty
-    } else {
-      return !trimmedTitle.isEmpty || !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-  }
-  
+
   var body: some View {
     NavigationStack {
       Form {
-        
-        // --- 1. AI 智慧製卡區塊 ---
+        // AI 生成區塊：可輸入一段 prompt（可中英混用），產生多張單字卡
         if !isEditMode {
           Section {
+            TextField("描述想學的單字範圍", text: $aiPrompt)
+              .disabled(isAIGenerating)
+            if let message = aiErrorMessage {
+              Text(message)
+                .font(.caption)
+                .foregroundStyle(.red)
+            }
             Button {
-              showAIPrompt = true
+              Task { await generateCardsWithAI() }
             } label: {
               HStack {
-                Image(systemName: "sparkles")
-                  .foregroundStyle(.purple)
-                Text("AI 文字自動生成")
-                  .foregroundStyle(.primary)
+                if isAIGenerating {
+                  ProgressView()
+                    .scaleEffect(0.9)
+                }
+                Text(isAIGenerating ? "產生中…" : "用 AI 產生單字集")
               }
+              .frame(maxWidth: .infinity)
             }
-            .disabled(isGenerating || isProcessingImage)
-            
-            PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-              HStack {
-                Image(systemName: "camera.viewfinder")
-                  .foregroundStyle(.blue)
-                Text("拍照/選圖製卡")
-                  .foregroundStyle(.primary)
-              }
-            }
-            .disabled(isGenerating || isProcessingImage)
-            .onChange(of: selectedPhotoItem) {
-              Task { await processSelectedImage() }
-            }
-            
-            if isGenerating {
-              HStack {
-                ProgressView()
-                Text("AI 正在撰寫卡片中...")
-                  .font(.caption).foregroundStyle(.secondary)
-              }
-            } else if isProcessingImage {
-              HStack {
-                ProgressView()
-                Text("AI 正在分析圖片內容...")
-                  .font(.caption).foregroundStyle(.secondary)
-              }
-            }
+            .disabled(aiPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isAIGenerating)
           } header: {
-            Text("AI 快速建立")
+            Text("AI 產生")
+          } footer: {
+            Text("可輸入一段說明或主題，AI 依內容產生多張單字卡。")
           }
         }
-        
-        // ✅ 2. 卡片種類
-        Section(header: Text("卡片種類")) {
-          Picker("種類", selection: $cardKind) {
-            ForEach(CardKind.allCases) { kind in
-              Text(kind.displayName).tag(kind)
-            }
-          }
-          .pickerStyle(.segmented)
-          
-          if cardKind == .quote {
-            Text("語錄卡片只顯示一句話，不會出現在複習/測驗中。")
-              .font(.footnote)
-              .foregroundStyle(.secondary)
-          } else {
-            Text("問題/答案卡片會進入複習與測驗。")
-              .font(.footnote)
-              .foregroundStyle(.secondary)
-          }
+
+        Section(header: Text("基本資訊")) {
+          TextField("標題 (例如：Knowledge)", text: $title)
         }
         
-        // --- 3. 基本資訊 ---
-        Section(header: Text(cardKind == .quote ? "語錄" : "標題 / 問題")) {
-          if cardKind == .quote {
-            // 語錄可能比一行長，用 TextEditor 更舒服
-            TextEditor(text: $title)
-              .frame(height: 90)
-          } else {
-            TextField("標題 (例如: TCP)", text: $title)
-          }
-        }
-        
-        // --- 4. 單字集選擇 ---
-        Section(header: Text("單字集")) {
-          Picker("選擇單字集", selection: $selectedWordSet) {
-            Text("無 (或由 AI 自動分類)").tag(nil as WordSet?)
-            ForEach(allWordSets, id: \.id) { wordSet in
-              Text(wordSet.title).tag(wordSet as WordSet?)
-            }
-          }
-        }
-        
-        // --- 5. 詳細內容（只有 QA 才顯示） ---
-        if cardKind == .qa {
-          Section(header: Text("詳細筆記 (Markdown)")) {
-            TextEditor(text: $content)
-              .frame(height: 200)
-            
-            Text("支援 Markdown：**粗體**、- 清單、# 標題、> 引用、`code`")
-              .font(.footnote)
-              .foregroundStyle(.secondary)
-          }
+
+        Section(header: Text("詳細筆記 (Markdown)")) {
+          TextEditor(text: $content)
+            .frame(height: 200)
         }
       }
       .navigationTitle(isEditMode ? "編輯卡片" : "新增卡片")
@@ -465,5 +383,49 @@ extension UIImage {
     UIGraphicsEndImageContext()
     
     return newImage
+  }
+
+  /// 依主題用 AI 產生多張單字卡，寫入所選單字集（或新建單字集），然後關閉畫面。
+  private func generateCardsWithAI() async {
+    aiErrorMessage = nil
+    isAIGenerating = true
+    defer { isAIGenerating = false }
+
+    print("[AddCardView] AI generate: isLoggedIn=\(authService.isLoggedIn)")
+
+    let service = AIService(client: authService.getClient())
+    do {
+      let items = try await service.generateCards(prompt: aiPrompt)
+      guard !items.isEmpty else {
+        aiErrorMessage = "未產生任何單字卡，請換個主題再試"
+        return
+      }
+
+      // 決定要加入的單字集：已選 > 進入時帶入 > 依主題新建
+      let targetSet: WordSet
+      if let existing = selectedWordSet ?? wordSet {
+        targetSet = existing
+      } else {
+        let setName = String(aiPrompt.prefix(30)).trimmingCharacters(in: .whitespacesAndNewlines)
+        targetSet = WordSet(title: setName.isEmpty ? "AI 單字集" : setName)
+        modelContext.insert(targetSet)
+      }
+
+      for item in items {
+        let card = Card(
+          title: item.word,
+          content: item.markdownContent,
+          wordSet: targetSet
+        )
+        modelContext.insert(card)
+      }
+
+      try modelContext.save()
+      WidgetReloader.reloadAll()
+      aiErrorMessage = nil
+      dismiss()
+    } catch {
+      aiErrorMessage = error.localizedDescription
+    }
   }
 }

@@ -61,7 +61,7 @@ struct QuestCardView: View {
       
       // Middle: Title and progress bar
       VStack(alignment: .leading, spacing: 6) {
-        Text(quest.title)
+        Text(quest.displayTitle)
           .font(.system(size: 15, weight: .medium))
           .foregroundStyle(quest.isCompleted ? .secondary : .primary)
         
@@ -112,5 +112,5 @@ struct QuestCardView: View {
     .environmentObject(ExperienceStore())
     .environmentObject(DailyQuestService())
     .padding()
-    .background(Color(.systemGroupedBackground))
+    .background(Color(UIColor.systemGroupedBackground))
 }

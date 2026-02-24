@@ -220,7 +220,8 @@ struct LoginView: View {
     await syncProfileToSupabase(userId: userId, displayName: finalDisplayName, avatarURL: avatarURLForSync)
     
     // 同步至 App Group UserDefaults（供 Widget 與主 App 一致）
-    auth.saveProfileToAppGroup(displayName: finalDisplayName, avatarURL: avatarURLForSync)
+    // 登入時立即刷新 Widget，讓使用者看到最新資料
+    auth.saveProfileToAppGroup(displayName: finalDisplayName, avatarURL: avatarURLForSync, shouldReloadWidget: true)
   }
   
   /// 將 display_name、avatar_url 寫入 Supabase user_profiles（依 user_id 更新或插入，避免 duplicate key）
@@ -230,12 +231,25 @@ struct LoginView: View {
       let display_name: String
       let avatar_url: String?
       let updated_at: Date
+      
+      enum CodingKeys: String, CodingKey {
+        case display_name
+        case avatar_url
+        case updated_at
+      }
     }
     struct ProfileInsert: Encodable {
       let user_id: UUID
       let display_name: String
       let avatar_url: String?
       let updated_at: Date
+      
+      enum CodingKeys: String, CodingKey {
+        case user_id
+        case display_name
+        case avatar_url
+        case updated_at
+      }
     }
     do {
       let insertPayload = ProfileInsert(user_id: userId, display_name: displayName, avatar_url: avatarURL, updated_at: Date())
@@ -246,7 +260,7 @@ struct LoginView: View {
         try await client
           .from("user_profiles")
           .update(updatePayload)
-          .eq("user_id", value: userId)
+          .eq(AppGroup.SupabaseFields.userId, value: userId)
           .execute()
       }
       print("✅ [Login] 已同步 display_name、avatar_url 至 Supabase user_profiles")

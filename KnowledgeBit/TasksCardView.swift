@@ -2,6 +2,7 @@
 // 顯示今日任務進度的元件
 
 import SwiftUI
+import UIKit
 
 struct TasksCardView: View {
   @EnvironmentObject var taskService: TaskService
@@ -75,5 +76,5 @@ struct TaskRowView: View {
   TasksCardView()
     .environmentObject(TaskService())
     .padding()
-    .background(Color(.systemGroupedBackground))
+    .background(Color(UIColor.systemGroupedBackground))
 }

@@ -19,6 +19,9 @@ struct QuizView: View {
   @State private var isFlipped = false
   @State private var showResult = false
   @State private var score = 0
+  @State private var showExitConfirmation = false
+
+  // 為了不破壞原始順序，我們在出現時把卡片打亂
   @State private var shuffledCards: [Card] = []
   @State private var sessionStartTime = Date()
 
@@ -56,11 +59,7 @@ struct QuizView: View {
               questService.recordWordSetCompleted(experienceStore: experienceStore)
               let total = shuffledCards.count
               let accuracy = total > 0 ? Int(Double(score) / Double(total) * 100) : 0
-              questService.recordWordSetQuizResult(
-                accuracyPercent: accuracy,
-                isPerfect: (total > 0 && score == total),
-                experienceStore: experienceStore
-              )
+              questService.recordWordSetQuizResult(accuracyPercent: accuracy, isPerfect: (total > 0 && score == total), quizType: .general, experienceStore: experienceStore)
             } else {
               if taskService.completeQuizTask(experienceStore: experienceStore) {
                 questService.recordExpGainedToday(20, experienceStore: experienceStore)
@@ -72,6 +71,26 @@ struct QuizView: View {
         )
       } else {
         VStack {
+          // 左上角退出鈕
+          HStack {
+            Button {
+              if currentCardIndex > 0 || isFlipped {
+                showExitConfirmation = true
+              } else {
+                dismiss()
+              }
+            } label: {
+              Image(systemName: "xmark")
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 44, height: 44)
+            }
+            Spacer()
+          }
+          .padding(.horizontal)
+          .padding(.top, 8)
+
+          // 上方進度條
           if !shuffledCards.isEmpty {
             Text("Question \(currentCardIndex + 1) / \(shuffledCards.count)")
               .font(.caption)
@@ -82,11 +101,8 @@ struct QuizView: View {
           Spacer()
 
           if shuffledCards.isEmpty {
-            ContentUnavailableView(
-              "沒有卡片",
-              systemImage: "tray.fill",
-              description: Text("請先新增知識卡片才能開始測驗")
-            )
+            // 如果沒有卡片
+            ContentUnavailableView("沒有卡片", systemImage: "tray.fill", description: Text("請先新增知識卡片才能開始測驗"))
           } else {
             let currentCard = shuffledCards[currentCardIndex]
 
@@ -189,6 +205,12 @@ struct QuizView: View {
         }
       }
     }
+    .alert("確定要退出嗎？", isPresented: $showExitConfirmation) {
+      Button("取消", role: .cancel) {}
+      Button("確定", role: .destructive) { dismiss() }
+    } message: {
+      Text("目前進度將不會儲存。")
+    }
     .onAppear {
       shuffledCards = cardsToUse.shuffled()
       sessionStartTime = Date()
@@ -238,50 +260,31 @@ struct QuizView: View {
     try? modelContext.save()
   }
 
-  // ✅ 按下忘了/記住了就直接前進
-  private func commitAndNext(isRemembered: Bool) {
-    if isRemembered { score += 1 }
+  // 切換下一張邏輯
+  func nextCard(isCorrect: Bool) {
+    if isCorrect {
+      score += 1
+      // 這裡未來可以加入邏輯：將卡片標記為「已精通」
+    }
 
     withAnimation {
       if currentCardIndex < shuffledCards.count - 1 {
-        currentCardIndex += 1
         isFlipped = false
-        showDetail = false   // ✅ 下一題預設收合
+        currentCardIndex += 1
       } else {
         showResult = true
       }
     }
   }
-
-  private func retryQuiz() {
+  
+  // Retry quiz - reset all state and reshuffle cards
+  func retryQuiz() {
     withAnimation {
       currentCardIndex = 0
       isFlipped = false
       showResult = false
       score = 0
-      showDetail = false
       shuffledCards = cardsToUse.shuffled()
-      sessionStartTime = Date()
-    }
-  }
-}
-
-// MARK: - Minimal Markdown Renderer
-
-private struct MarkdownTextView: View {
-  let markdown: String
-
-  var body: some View {
-    if let attributed = try? AttributedString(markdown: markdown) {
-      Text(attributed)
-        .font(.body)
-        .foregroundStyle(.primary)
-        .textSelection(.enabled)
-    } else {
-      Text(markdown)
-        .font(.body)
-        .foregroundStyle(.primary)
-        .textSelection(.enabled)
     }
   }
 }

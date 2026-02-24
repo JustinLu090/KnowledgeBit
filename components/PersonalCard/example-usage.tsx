@@ -6,13 +6,11 @@
 
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import React, { useState } from 'react'
 import PersonalCard from './index'
+import './glassmorphism.css'
 
 export default function LobbyPage() {
-  const router = useRouter()
-  
   // 範例：使用者資料（實際應從 API 或狀態管理取得）
   const [userData, setUserData] = useState({
     name: '陳庭宇',
@@ -29,23 +27,34 @@ export default function LobbyPage() {
       ...prev,
       exp: prev.exp + expGained
     }))
-    
-    // 這裡可以加入其他邏輯，例如：
-    // - 檢查是否升級
-    // - 發送分析事件
-    // - 更新後端資料
   }
 
   // 處理個人檔案按鈕點擊
+  // 注意：如果使用 Next.js，可以在這裡使用 useRouter
+  // import { useRouter } from 'next/navigation'
+  // const router = useRouter()
+  // 然後在 handleProfileClick 中使用 router.push('/profile')
   const handleProfileClick = () => {
-    router.push('/profile')
-    // 或開啟 modal
-    // setShowProfileModal(true)
+    console.log('導航到個人檔案頁面')
+    // 實際使用時，可以這樣寫：
+    // if (router) router.push('/profile')
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-6">
-      <div className="max-w-4xl mx-auto space-y-6">
+    <div 
+      className="min-h-screen p-6 md:p-8" 
+      style={{
+        background: `
+          radial-gradient(circle at 20% 50%, rgba(138, 43, 226, 0.3) 0%, transparent 50%),
+          radial-gradient(circle at 80% 80%, rgba(59, 130, 246, 0.3) 0%, transparent 50%),
+          radial-gradient(circle at 40% 20%, rgba(255, 182, 193, 0.3) 0%, transparent 50%),
+          linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 25%, #16213e 50%, #0f3460 75%, #0a0a0f 100%)
+        `,
+        backgroundAttachment: 'fixed',
+        backgroundSize: 'cover'
+      }}
+    >
+      <div className="max-w-4xl mx-auto space-y-8">
         {/* PersonalCard 元件 */}
         <PersonalCard
           name={userData.name}
@@ -58,24 +67,24 @@ export default function LobbyPage() {
         />
 
         {/* 範例：模擬戰鬥結算按鈕（僅供測試） */}
-        <div className="bg-white rounded-lg p-4 shadow-sm">
-          <h2 className="text-lg font-semibold mb-4">測試 EXP 增加動畫</h2>
-          <div className="flex gap-2">
+        <div className="glass-card p-6 md:p-8">
+          <h2 className="glass-text-bold text-xl mb-6">測試 EXP 增加動畫</h2>
+          <div className="flex gap-4 flex-wrap">
             <button
               onClick={() => handleBattleComplete(15)}
-              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+              className="glass-action-button blue"
             >
               +15 EXP
             </button>
             <button
               onClick={() => handleBattleComplete(30)}
-              className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
+              className="glass-action-button green"
             >
               +30 EXP
             </button>
             <button
               onClick={() => handleBattleComplete(50)}
-              className="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors"
+              className="glass-action-button purple"
             >
               +50 EXP
             </button>
@@ -85,36 +94,3 @@ export default function LobbyPage() {
     </div>
   )
 }
-
-/**
- * 實際整合範例（在真實的 Lobby 頁面中）
- * 
- * ```tsx
- * // app/lobby/page.tsx 或 pages/lobby.tsx
- * import PersonalCard from '@/components/PersonalCard'
- * import { useUser } from '@/hooks/useUser'
- * 
- * export default function Lobby() {
- *   const { user, updateExp } = useUser()
- *   const router = useRouter()
- * 
- *   // 從 API 取得使用者資料
- *   const { data: userData } = useSWR('/api/user', fetcher)
- * 
- *   return (
- *     <div className="lobby-container">
- *       <PersonalCard
- *         name={userData?.name || '使用者'}
- *         title={userData?.title || '新手'}
- *         level={userData?.level || 1}
- *         exp={userData?.exp || 0}
- *         expToNext={userData?.expToNext || 100}
- *         avatarUrl={userData?.avatarUrl}
- *         onProfileClick={() => router.push('/profile')}
- *       />
- *       {/* 其他 Lobby 內容 */}
- *     </div>
- *   )
- * }
- * ```
- */

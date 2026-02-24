@@ -3,6 +3,7 @@
 // Each month's first day aligns to its actual weekday
 
 import SwiftUI
+import UIKit
 import SwiftData
 import Foundation
 
@@ -114,7 +115,7 @@ struct StudyHeatmapView: View {
       heatmapGrid
     }
     .padding(.vertical, 20)
-    .background(Color(.secondarySystemGroupedBackground))
+    .background(Color(UIColor.secondarySystemGroupedBackground))
     .cornerRadius(16)
     .alert("刪除所有學習記錄", isPresented: $showingDeleteAlert) {
       Button("取消", role: .cancel) { }
@@ -170,7 +171,7 @@ struct StudyHeatmapView: View {
             .foregroundStyle(.primary)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(Color(.systemGray6))
+            .background(Color(UIColor.systemGray6))
             .cornerRadius(6)
           }
           
@@ -183,7 +184,7 @@ struct StudyHeatmapView: View {
               .foregroundStyle(.red)
               .padding(.horizontal, 8)
               .padding(.vertical, 4)
-              .background(Color(.systemGray6))
+              .background(Color(UIColor.systemGray6))
               .cornerRadius(6)
           }
         }
@@ -302,13 +303,13 @@ struct StudyHeatmapView: View {
         .foregroundStyle(.primary)
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .background(Color(.systemBackground))
+        .background(Color(UIColor.systemBackground))
         .cornerRadius(4)
         .shadow(color: .black.opacity(0.15), radius: 6, x: 0, y: 2)
       
       // Arrow pointing down
       Triangle()
-        .fill(Color(.systemBackground))
+        .fill(Color(UIColor.systemBackground))
         .frame(width: 6, height: 4)
         .offset(y: -1)
     }
@@ -561,13 +562,17 @@ struct StudyHeatmapView: View {
       }
       
       try modelContext.save()
-      HapticFeedbackHelper.notification(.success)
+      #if canImport(UIKit)
+      HapticFeedbackHelper.notification(UINotificationFeedbackGenerator.FeedbackType.success)
+      #endif
       
       // Clear selected day after deletion
       selectedDay = nil
     } catch {
       print("Failed to delete study logs: \(error)")
-      HapticFeedbackHelper.notification(.error)
+      #if canImport(UIKit)
+      HapticFeedbackHelper.notification(UINotificationFeedbackGenerator.FeedbackType.error)
+      #endif
     }
   }
 }
@@ -577,5 +582,5 @@ struct StudyHeatmapView: View {
 #Preview {
   StudyHeatmapView()
     .padding()
-    .background(Color(.systemGroupedBackground))
+    .background(Color(UIColor.systemGroupedBackground))
 }

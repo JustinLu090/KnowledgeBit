@@ -6,7 +6,10 @@ import SwiftData
 
 struct MainTabView: View {
   @Environment(\.modelContext) private var modelContext
+  @EnvironmentObject var authService: AuthService
   @EnvironmentObject var dailyQuestService: DailyQuestService
+  @EnvironmentObject var pendingInviteStore: PendingInviteStore
+  @StateObject private var communityViewModel = CommunityViewModel()
   @State private var selectedTab = 0
   
   init() {
@@ -49,11 +52,7 @@ struct MainTabView: View {
         }
         .tag(1)
       
-      BattleView()
-        .tabItem {
-          Label("對戰", systemImage: "trophy.fill")
-        }
-        .tag(2)
+      communityTab
       
       AchievementsView()
         .tabItem {
@@ -71,6 +70,22 @@ struct MainTabView: View {
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
       // App 回到前景時將昨日 EXP/學習時長寫入 DailyStats（若已跨日）
       StatisticsManager.shared.flushYesterdayIfNeeded(modelContext: modelContext, dailyQuestService: dailyQuestService)
+      // 更新社群頁好友請求數量（badge）
+      Task { await communityViewModel.refresh(authService: authService) }
+    }
+  }
+
+  @ViewBuilder
+  private var communityTab: some View {
+    let base = CommunityView(viewModel: communityViewModel, pendingInviteStore: pendingInviteStore)
+      .tabItem {
+        Label("社群", systemImage: "person.3.fill")
+      }
+      .tag(2)
+    if communityViewModel.pendingCount > 0 {
+      base.badge(communityViewModel.pendingCount)
+    } else {
+      base
     }
   }
 }

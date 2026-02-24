@@ -1,0 +1,12 @@
+// 複製此檔內容到新檔 SupabaseConfig.swift，並到 Supabase Dashboard > Project Settings > API 填入真實值。
+// 請勿將 SupabaseConfig.swift 提交至版控（應已列於 .gitignore）。
+
+import Foundation
+
+enum SupabaseConfig {
+  /// Project URL（例如 https://xxxxx.supabase.co）
+  static let url = URL(string: "https://YOUR_PROJECT_REF.supabase.co")!
+  
+  /// anon public key（一長串 JWT，僅用於前端，勿使用 service_role key）
+  static let anonKey = "YOUR_ANON_KEY"
+}

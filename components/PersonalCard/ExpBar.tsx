@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useEffect, useState, useRef } from 'react'
+import './glassmorphism.css'
 
 interface ExpBarProps {
   exp: number
@@ -62,25 +63,25 @@ export default function ExpBar({ exp, expToNext, level, expGained }: ExpBarProps
   const isNewUser = level === 1 && exp === 0
 
   return (
-    <div ref={containerRef} className="mt-3 space-y-1.5 relative">
+    <div ref={containerRef} className="mt-5 space-y-2 relative">
       {/* EXP 數值與進度條 */}
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+          <div className="h-2.5 glass-base rounded-full overflow-hidden">
             <div
-              className="h-full bg-gradient-to-r from-blue-400 to-blue-600 rounded-full transition-all duration-300 ease-out"
+              className="h-full bg-gradient-to-r from-blue-400/90 via-purple-500/90 to-pink-400/90 rounded-full transition-all duration-500 ease-out backdrop-blur-sm"
               style={{ width: `${percentage}%` }}
             />
           </div>
         </div>
-        <div className="text-xs md:text-sm font-medium text-gray-700 whitespace-nowrap flex-shrink-0">
+        <div className="glass-text text-xs md:text-sm font-medium whitespace-nowrap flex-shrink-0">
           EXP {displayExp}/{expToNext} ({Math.round(percentage)}%)
         </div>
       </div>
 
       {/* 新手提示文字 */}
       {isNewUser && (
-        <p className="text-xs text-gray-500 text-center">
+        <p className="glass-text text-xs text-center opacity-75">
           完成第一場對戰即可獲得 EXP
         </p>
       )}
@@ -93,7 +94,7 @@ export default function ExpBar({ exp, expToNext, level, expGained }: ExpBarProps
             animation: 'expGainFloat 2s ease-out forwards'
           }}
         >
-          <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-green-500 text-white shadow-lg">
+          <span className="glass-action-button green inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold">
             +{expGainValue} EXP
           </span>
         </div>

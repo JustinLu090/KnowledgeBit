@@ -2,6 +2,7 @@
 // 共用：學習強度等級（藍色階層，用於週曆與熱力圖）
 
 import SwiftUI
+import UIKit
 
 /// 視覺強度等級（0 / 1–2 / 3–5 / 6–9 / 10+，藍色由淺到深）
 enum StudyIntensityLevel: Int, CaseIterable {
@@ -24,7 +25,7 @@ enum StudyIntensityLevel: Int, CaseIterable {
   /// 藍色階層
   var color: Color {
     switch self {
-    case .none: return Color(.systemGray6)
+    case .none: return Color(UIColor.systemGray6)
     case .low: return Color.blue.opacity(0.2)
     case .medium: return Color.blue.opacity(0.5)
     case .high: return Color.blue.opacity(0.8)

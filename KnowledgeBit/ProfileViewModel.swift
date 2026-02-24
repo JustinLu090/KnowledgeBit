@@ -13,25 +13,31 @@ final class ProfileViewModel: ObservableObject {
   
   init() {}
   
-  /// 從 Google Sign-In SDK 取得當前用戶 profile，並將 name、picture URL 透過 API 更新至遠端資料庫與 App Group
-  func refreshUserProfile(authService: AuthService) async {
+  /// 同步 profile 至遠端。若有本地 UserProfile（使用者曾編輯），優先使用；否則用 Google/Auth 資料
+  func refreshUserProfile(authService: AuthService, localProfile: UserProfile?) async {
     guard authService.currentUserId != nil else { return }
     isRefreshing = true
     errorMessage = nil
     defer { isRefreshing = false }
-    
-    // 1. 優先從 Google Sign-In SDK 取得當前用戶的 profile（反映 Google 帳號最新狀態）
-    let googleUser = GIDSignIn.sharedInstance.currentUser
-    let nameFromGoogle = googleUser?.profile?.name
-    let avatarURLFromGoogle = googleUser?.profile?.imageURL(withDimension: 200)?.absoluteString
-    
-    // 2. 若 SDK 無資料（例如僅從 session 還原），則用 Auth session 的 userMetadata
-    let (metadataName, metadataAvatar) = authService.metadataDisplayNameAndAvatar()
-    let displayName = (nameFromGoogle ?? metadataName ?? authService.currentUserDisplayName) ?? "使用者"
+
+    let displayName: String
+    let avatarURL: String?
+
+    if let profile = localProfile {
+      // 使用者曾編輯：以本地為準，同步至遠端
+      displayName = profile.displayName.isEmpty ? "使用者" : profile.displayName
+      avatarURL = profile.avatarURL
+    } else {
+      // 無本地編輯：從 Google / Auth 取得
+      let googleUser = GIDSignIn.sharedInstance.currentUser
+      let nameFromGoogle = googleUser?.profile?.name
+      let avatarURLFromGoogle = googleUser?.profile?.imageURL(withDimension: 200)?.absoluteString
+      let (metadataName, metadataAvatar) = authService.metadataDisplayNameAndAvatar()
+      displayName = (nameFromGoogle ?? metadataName ?? authService.currentUserDisplayName) ?? "使用者"
+      avatarURL = avatarURLFromGoogle ?? metadataAvatar ?? authService.currentUserAvatarURL
+    }
+
     let finalName = displayName.isEmpty ? "使用者" : displayName
-    let avatarURL = avatarURLFromGoogle ?? metadataAvatar ?? authService.currentUserAvatarURL
-    
-    // 3. 透過 API 更新至遠端資料庫（Supabase user_profiles）並寫入 App Group
     await authService.syncProfileToRemote(displayName: finalName, avatarURL: avatarURL)
   }
 }

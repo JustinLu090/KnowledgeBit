@@ -4,6 +4,14 @@
 import Foundation
 import Combine
 
+/// 測驗類型：用於區分一般單字測驗與選擇題測驗，以更新對應的每日任務
+enum QuizType {
+  /// 一般單字測驗（拼字、填空、翻卡等）
+  case general
+  /// 選擇題測驗（挖空 + 四選一）
+  case multipleChoice
+}
+
 /// Daily quest model
 struct DailyQuest: Identifiable {
   let id: UUID
@@ -30,10 +38,24 @@ struct DailyQuest: Identifiable {
     return min(Double(currentProgress) / Double(targetValue), 1.0)
   }
   
-  /// Update progress and check completion
+  /// Update progress and check completion.
+  /// 目標為 1 的任務（如全對類）僅接受 0 或 1，避免誤寫成 rewardExp 等造成 20/1 顯示異常。
   mutating func updateProgress(_ newProgress: Int) {
-    currentProgress = newProgress
+    if targetValue == 1 {
+      currentProgress = newProgress >= 1 ? 1 : 0
+    } else {
+      currentProgress = newProgress
+    }
     isCompleted = currentProgress >= targetValue
+  }
+  
+  /// 供每日任務清單顯示的標題（可區分單字複習全對與選擇題全對）
+  var displayTitle: String {
+    switch title {
+    case "單字集複習全對": return "單字複習：完美達成"
+    case "選擇題測驗全對": return "選擇題挑戰：全對"
+    default: return title
+    }
   }
 }
 
@@ -50,18 +72,19 @@ class DailyQuestService: ObservableObject {
   private let todayStudyMinutesKey = "daily_quest_today_study_minutes"
   private let todayWordSetsCompletedKey = "daily_quest_today_word_sets"
   
-  // 所有可用的任務定義（六個）
+  // 所有可用的任務定義（七個）
   private let allQuestTitles = [
     "學習時長 5 分鐘",
     "完成一本單字集複習",
     "完成兩本單字集複習",
     "單字集複習答對率超過 90%",
     "單字集複習全對",
+    "選擇題測驗全對",
     "獲得 30 經驗值"
   ]
-  private let allQuestTargets = [5, 1, 2, 1, 1, 30]
-  private let allQuestRewards = [20, 15, 25, 15, 20, 10]
-  private let allQuestIcons = ["clock.fill", "book.fill", "books.vertical.fill", "percent", "checkmark.circle.fill", "bolt.fill"]
+  private let allQuestTargets = [5, 1, 2, 1, 1, 1, 30]
+  private let allQuestRewards = [20, 15, 25, 15, 20, 20, 10]
+  private let allQuestIcons = ["clock.fill", "book.fill", "books.vertical.fill", "percent", "checkmark.circle.fill", "list.bullet.circle.fill", "bolt.fill"]
   
   init() {
     guard let shared = UserDefaults(suiteName: AppGroup.identifier) else {
@@ -103,8 +126,8 @@ class DailyQuestService: ObservableObject {
     let seed = Int(date.timeIntervalSince1970 / 86400) // 除以86400得到天數
     var generator = SeededRandomNumberGenerator(seed: seed)
     
-    // 從 0-5 中隨機選出 3 個不重複的索引
-    var indices = Array(0..<6)
+    // 從 0-6 中隨機選出 3 個不重複的索引
+    var indices = Array(0..<7)
     indices.shuffle(using: &generator)
     return Array(indices.prefix(3)).sorted()
   }
@@ -170,15 +193,16 @@ class DailyQuestService: ObservableObject {
       quests[idx].updateProgress(min(todayExp, 30))
     }
     
-    // Restore 單字集複習答對率超過 90%、單字集複習全對 from saved progress
+    // Restore 單字集複習答對率超過 90%、單字集複習全對、選擇題測驗全對 from saved progress（目標為 1 的任務進度上限為 1，避免 20/1 等異常）
     if let data = userDefaults.data(forKey: questProgressKey),
        let decoded = try? JSONDecoder().decode([QuestProgressSave].self, from: data),
        decoded.count == quests.count {
       for (i, saved) in decoded.enumerated() where i < quests.count {
         let title = quests[i].title
-        if title == "單字集複習答對率超過 90%" || title == "單字集複習全對" {
-          quests[i].currentProgress = saved.progress
-          quests[i].isCompleted = saved.isCompleted
+        if title == "單字集複習答對率超過 90%" || title == "單字集複習全對" || title == "選擇題測驗全對" {
+          let cap = quests[i].targetValue == 1 ? min(saved.progress, 1) : saved.progress
+          quests[i].currentProgress = cap
+          quests[i].isCompleted = saved.isCompleted || cap >= quests[i].targetValue
         }
       }
     }
@@ -270,11 +294,16 @@ class DailyQuestService: ObservableObject {
     }
   }
   
-  /// 記錄單字集複習結果：答對率與是否全對；更新「答對率超過 90%」「全對」任務，達成時各發放 15 / 20 EXP
-  func recordWordSetQuizResult(accuracyPercent: Int, isPerfect: Bool, experienceStore: ExperienceStore) {
+  /// 記錄單字集／選擇題測驗結果：依測驗類型更新對應任務，達成時發放 EXP。
+  /// - Parameter quizType: 測驗類型（.general 僅更新「單字集複習全對」；.multipleChoice 僅更新「選擇題測驗全對」）
+  /// 任務具持久性：一旦當日曾達成即保持已完成，不會因後續測驗未達標而被重置。
+  func recordWordSetQuizResult(accuracyPercent: Int, isPerfect: Bool, quizType: QuizType, experienceStore: ExperienceStore) {
+    // 答對率超過 90%：兩種測驗皆可觸發
     if let index = quests.firstIndex(where: { $0.title == "單字集複習答對率超過 90%" }) {
       let wasCompleted = quests[index].isCompleted
-      quests[index].updateProgress(accuracyPercent >= 90 ? 1 : 0)
+      if accuracyPercent >= 90 {
+        quests[index].updateProgress(1)
+      }
       saveQuestsToStorage()
       notifyQuestsDidChange()
       if !wasCompleted && quests[index].isCompleted {
@@ -283,9 +312,12 @@ class DailyQuestService: ObservableObject {
         print("✅ [Quest] 單字集複習答對率超過 90% - 獲得 \(quests[index].rewardExp) EXP")
       }
     }
+    // 單字集複習全對：僅一般單字測驗 (.general) 且全對時觸發
     if let index = quests.firstIndex(where: { $0.title == "單字集複習全對" }) {
       let wasCompleted = quests[index].isCompleted
-      quests[index].updateProgress(isPerfect ? 1 : 0)
+      if quizType == .general && isPerfect {
+        quests[index].updateProgress(1)
+      }
       saveQuestsToStorage()
       notifyQuestsDidChange()
       if !wasCompleted && quests[index].isCompleted {
@@ -294,9 +326,23 @@ class DailyQuestService: ObservableObject {
         print("✅ [Quest] 單字集複習全對 - 獲得 \(quests[index].rewardExp) EXP")
       }
     }
+    // 選擇題測驗全對：僅選擇題測驗 (.multipleChoice) 且全對時觸發
+    if let index = quests.firstIndex(where: { $0.title == "選擇題測驗全對" }) {
+      let wasCompleted = quests[index].isCompleted
+      if quizType == .multipleChoice && isPerfect {
+        quests[index].updateProgress(1)
+      }
+      saveQuestsToStorage()
+      notifyQuestsDidChange()
+      if !wasCompleted && quests[index].isCompleted {
+        experienceStore.addExp(delta: quests[index].rewardExp)
+        recordExpGainedToday(quests[index].rewardExp, experienceStore: experienceStore)
+        print("✅ [Quest] 選擇題測驗全對 - 獲得 \(quests[index].rewardExp) EXP")
+      }
+    }
   }
   
-  /// Update progress for a specific quest (generic). 六個每日任務完成時皆會發放對應 EXP。
+  /// Update progress for a specific quest (generic). 七個每日任務完成時皆會發放對應 EXP。
   func updateProgress(questId: UUID, progress: Int, experienceStore: ExperienceStore?) {
     if let index = quests.firstIndex(where: { $0.id == questId }) {
       let wasCompleted = quests[index].isCompleted

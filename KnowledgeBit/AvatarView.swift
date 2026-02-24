@@ -2,6 +2,7 @@
 // 頭像顯示與編輯區塊（降低巢狀、共用邏輯）
 
 import SwiftUI
+import UIKit
 import PhotosUI
 import Combine
 

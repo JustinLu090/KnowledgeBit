@@ -6,6 +6,7 @@ import SwiftUI
 import Combine
 import Supabase
 import GoogleSignIn
+import WidgetKit
 
 @MainActor
 final class AuthService: ObservableObject {
@@ -23,9 +24,12 @@ final class AuthService: ObservableObject {
   
   // MARK: - App Group UserDefaults（與 Widget 共用；AuthService 為 @MainActor，讀寫皆在主線程，符合 CFPrefs 規範）
   private static let appGroupKeys = (
-    displayName: "appgroup_user_display_name",
-    avatarURL: "appgroup_user_avatar_url",
-    userId: "appgroup_user_id"
+    displayName: AppGroup.Keys.displayName,
+    avatarURL: AppGroup.Keys.avatarURL,
+    userId: AppGroup.Keys.userId,
+    level: AppGroup.Keys.level,
+    exp: AppGroup.Keys.exp,
+    expToNext: AppGroup.Keys.expToNext
   )
   
   private var appGroupDefaults: UserDefaults? {
@@ -50,11 +54,12 @@ final class AuthService: ObservableObject {
     let authOptions = SupabaseClientOptions.AuthOptions(emitLocalSessionAsInitialSession: true)
     let options = SupabaseClientOptions(auth: authOptions)
     
-    client = SupabaseClient(
+    let newClient: SupabaseClient = SupabaseClient(
       supabaseURL: SupabaseConfig.url,
       supabaseKey: SupabaseConfig.anonKey,
       options: options
     )
+    client = newClient
     authTask = Task { await observeAuthState() }
   }
   
@@ -215,12 +220,146 @@ final class AuthService: ObservableObject {
   }
   
   /// 將目前使用者的 displayName、avatarURL 寫入 App Group UserDefaults（供 Widget 等讀取，僅在主線程呼叫）
-  func saveProfileToAppGroup(displayName: String, avatarURL: String?) {
-    guard let defaults = appGroupDefaults else { return }
+  /// 使用線程安全的寫入方式，確保資料一致性
+  /// - Parameters:
+  ///   - displayName: 使用者顯示名稱
+  ///   - avatarURL: 頭像 URL（可選）
+  ///   - shouldReloadWidget: 是否立即觸發 Widget 刷新（預設為 true，批次同步時設為 false）
+  func saveProfileToAppGroup(displayName: String, avatarURL: String?, shouldReloadWidget: Bool = true) {
+    // 確保在主線程執行
+    guard Thread.isMainThread else {
+      Task { @MainActor in
+        self.saveProfileToAppGroup(displayName: displayName, avatarURL: avatarURL, shouldReloadWidget: shouldReloadWidget)
+      }
+      return
+    }
+    
+    guard let defaults = appGroupDefaults else {
+      print("⚠️ [App Group] sharedUserDefaults 為 nil，請確認 Signing & Capabilities 已設定 App Groups")
+      return
+    }
+    
+    // 使用線程安全的方式寫入
     defaults.set(displayName, forKey: Self.appGroupKeys.displayName)
     defaults.set(avatarURL, forKey: Self.appGroupKeys.avatarURL)
     if let id = currentUserId {
       defaults.set(id.uuidString, forKey: Self.appGroupKeys.userId)
+    }
+    defaults.synchronize() // 確保立即寫入，避免競爭條件
+    
+    // 只有在需要時才觸發 Widget 刷新（批次同步時由 syncToWidget 統一處理）
+    if shouldReloadWidget {
+      WidgetReloader.reloadAll()
+    }
+  }
+  
+  /// 將使用者的 level、exp、expToNext 寫入 App Group UserDefaults（供 Widget 等讀取，僅在主線程呼叫）
+  /// 使用線程安全的寫入方式，確保資料一致性
+  /// - Parameters:
+  ///   - level: 使用者等級
+  ///   - exp: 當前經驗值
+  ///   - expToNext: 升級所需經驗值
+  ///   - shouldReloadWidget: 是否立即觸發 Widget 刷新（預設為 true，批次同步時設為 false）
+  func saveExpToAppGroup(level: Int, exp: Int, expToNext: Int, shouldReloadWidget: Bool = true) {
+    // 確保在主線程執行（AuthService 為 @MainActor，但為安全起見再次確認）
+    guard Thread.isMainThread else {
+      Task { @MainActor in
+        self.saveExpToAppGroup(level: level, exp: exp, expToNext: expToNext, shouldReloadWidget: shouldReloadWidget)
+      }
+      return
+    }
+    
+    guard let defaults = appGroupDefaults else {
+      print("⚠️ [App Group] sharedUserDefaults 為 nil，請確認 Signing & Capabilities 已設定 App Groups")
+      return
+    }
+    
+    // 使用線程安全的方式寫入（雖然已在主線程，但 synchronize 確保立即寫入磁碟）
+    defaults.set(level, forKey: Self.appGroupKeys.level)
+    defaults.set(exp, forKey: Self.appGroupKeys.exp)
+    defaults.set(expToNext, forKey: Self.appGroupKeys.expToNext)
+    defaults.synchronize() // 確保立即寫入，避免競爭條件
+    
+    print("✅ [App Group] 已同步等級與經驗值 - Level: \(level), EXP: \(exp)/\(expToNext)")
+    
+    // 只有在需要時才觸發 Widget 刷新（批次同步時由 syncToWidget 統一處理）
+    if shouldReloadWidget {
+      WidgetReloader.reloadAll()
+    }
+  }
+  
+  /// 批次同步所有使用者資料到 App Group（供 Widget 讀取）
+  /// 在一次完整的同步流程中，使用此方法可以避免多次觸發 Widget 刷新
+  /// - Parameters:
+  ///   - displayName: 使用者顯示名稱（可選，nil 時不更新）
+  ///   - avatarURL: 頭像 URL（可選，nil 時不更新）
+  ///   - level: 使用者等級（可選，nil 時不更新）
+  ///   - exp: 當前經驗值（可選，nil 時不更新）
+  ///   - expToNext: 升級所需經驗值（可選，nil 時不更新）
+  func syncToWidget(
+    displayName: String? = nil,
+    avatarURL: String? = nil,
+    level: Int? = nil,
+    exp: Int? = nil,
+    expToNext: Int? = nil
+  ) {
+    // 確保在主線程執行
+    guard Thread.isMainThread else {
+      Task { @MainActor in
+        self.syncToWidget(displayName: displayName, avatarURL: avatarURL, level: level, exp: exp, expToNext: expToNext)
+      }
+      return
+    }
+    
+    guard let defaults = appGroupDefaults else {
+      print("⚠️ [App Group] sharedUserDefaults 為 nil，請確認 Signing & Capabilities 已設定 App Groups")
+      return
+    }
+    
+    var hasUpdates = false
+    
+    // 批次寫入所有需要更新的資料（不立即刷新）
+    if let name = displayName {
+      defaults.set(name, forKey: Self.appGroupKeys.displayName)
+      hasUpdates = true
+    }
+    
+    if let url = avatarURL {
+      defaults.set(url, forKey: Self.appGroupKeys.avatarURL)
+      hasUpdates = true
+    } else if avatarURL == nil && displayName != nil {
+      // 如果明確傳入 nil，清除頭像 URL
+      defaults.removeObject(forKey: Self.appGroupKeys.avatarURL)
+      hasUpdates = true
+    }
+    
+    if let id = currentUserId, (displayName != nil || avatarURL != nil) {
+      defaults.set(id.uuidString, forKey: Self.appGroupKeys.userId)
+      hasUpdates = true
+    }
+    
+    if let lvl = level {
+      defaults.set(lvl, forKey: Self.appGroupKeys.level)
+      hasUpdates = true
+    }
+    
+    if let e = exp {
+      defaults.set(e, forKey: Self.appGroupKeys.exp)
+      hasUpdates = true
+    }
+    
+    if let etn = expToNext {
+      defaults.set(etn, forKey: Self.appGroupKeys.expToNext)
+      hasUpdates = true
+    }
+    
+    // 只有在有更新時才同步並刷新
+    if hasUpdates {
+      defaults.synchronize() // 確保立即寫入，避免競爭條件
+      print("✅ [App Group] 批次同步完成 - displayName: \(displayName ?? "未更新"), level: \(level?.description ?? "未更新"), exp: \(exp?.description ?? "未更新")")
+      
+      // 統一觸發一次 Widget 刷新（使用防抖機制）
+      WidgetReloader.reloadAll()
     }
   }
   
@@ -238,6 +377,7 @@ final class AuthService: ObservableObject {
     defaults.removeObject(forKey: Self.appGroupKeys.displayName)
     defaults.removeObject(forKey: Self.appGroupKeys.avatarURL)
     defaults.removeObject(forKey: Self.appGroupKeys.userId)
+    defaults.synchronize()
   }
   
   /// 強制以目前 Auth session 的 userMetadata 同步到 Supabase user_profiles 與 App Group（登入成功或 App 啟動時呼叫）
@@ -250,19 +390,33 @@ final class AuthService: ObservableObject {
     let avatar = avatarURL ?? currentUserAvatarURL
     
     // 寫入 App Group（與 Widget 一致）
-    saveProfileToAppGroup(displayName: finalName, avatarURL: avatar)
+    // 不立即刷新，因為可能還有其他資料需要同步（如 EXP、Level）
+    saveProfileToAppGroup(displayName: finalName, avatarURL: avatar, shouldReloadWidget: false)
     
     // 依 user_id 更新或插入，避免 upsert 預設用 primary key 導致 duplicate key on user_id
     struct ProfileUpdate: Encodable {
       let display_name: String
       let avatar_url: String?
       let updated_at: Date
+      
+      enum CodingKeys: String, CodingKey {
+        case display_name
+        case avatar_url
+        case updated_at
+      }
     }
     struct ProfileInsert: Encodable {
       let user_id: UUID
       let display_name: String
       let avatar_url: String?
       let updated_at: Date
+      
+      enum CodingKeys: String, CodingKey {
+        case user_id
+        case display_name
+        case avatar_url
+        case updated_at
+      }
     }
     do {
       let insertPayload = ProfileInsert(user_id: userId, display_name: finalName, avatar_url: avatar, updated_at: Date())
@@ -274,7 +428,7 @@ final class AuthService: ObservableObject {
         try await client
           .from("user_profiles")
           .update(updatePayload)
-          .eq("user_id", value: userId)
+          .eq(AppGroup.SupabaseFields.userId, value: userId)
           .execute()
       }
       print("✅ [Auth] 已強制同步 display_name、avatar_url 至 Supabase 與 App Group")
@@ -283,30 +437,47 @@ final class AuthService: ObservableObject {
     }
   }
   
+  /// 上傳頭貼至 Supabase Storage，回傳公開 URL
+  /// 需先在 Supabase Dashboard 建立 bucket「avatars」且設為 public
+  func uploadAvatar(userId: UUID, imageData: Data) async throws -> String {
+    guard session != nil else {
+      throw NSError(domain: "AuthService", code: -1, userInfo: [NSLocalizedDescriptionKey: "未登入，無法上傳"])
+    }
+    let path = "\(userId.uuidString)/avatar.jpg"
+    #if DEBUG
+    print("📤 [UploadAvatar] path=\(path), userId=\(userId.uuidString)")
+    #endif
+    let bucket = "avatars"  // 需與 Dashboard 的 bucket 名稱完全一致（含大小寫）
+    _ = try await client.storage
+      .from(bucket)
+      .upload(path, data: imageData, options: FileOptions(contentType: "image/jpeg", upsert: true))
+    let publicURL = try client.storage.from(bucket).getPublicURL(path: path)
+    return publicURL.absoluteString
+  }
+
   /// 將指定的 displayName、avatarURL 寫入 Supabase user_profiles 與 App Group（供 ProfileViewModel 等呼叫）
   func syncProfileToRemote(displayName: String, avatarURL: String?) async {
     guard let userId = currentUserId else { return }
     let finalName = displayName.isEmpty ? "使用者" : displayName
     saveProfileToAppGroup(displayName: finalName, avatarURL: avatarURL)
-    struct ProfileUpdate: Encodable {
-      let display_name: String
-      let avatar_url: String?
-      let updated_at: Date
-    }
-    struct ProfileInsert: Encodable {
+    struct ProfileUpsert: Encodable {
       let user_id: UUID
       let display_name: String
       let avatar_url: String?
       let updated_at: Date
+      
+      enum CodingKeys: String, CodingKey {
+        case user_id
+        case display_name
+        case avatar_url
+        case updated_at
+      }
     }
     do {
-      let insertPayload = ProfileInsert(user_id: userId, display_name: finalName, avatar_url: avatarURL, updated_at: Date())
-      do {
-        try await client.from("user_profiles").insert(insertPayload).execute()
-      } catch {
-        let updatePayload = ProfileUpdate(display_name: finalName, avatar_url: avatarURL, updated_at: Date())
-        try await client.from("user_profiles").update(updatePayload).eq("user_id", value: userId).execute()
-      }
+      let payload = ProfileUpsert(user_id: userId, display_name: finalName, avatar_url: avatarURL, updated_at: Date())
+      try await client.from("user_profiles")
+        .upsert(payload, onConflict: AppGroup.SupabaseFields.userId)
+        .execute()
       print("✅ [Auth] 已同步 profile 至遠端")
     } catch {
       print("⚠️ [Auth] 同步 user_profiles 失敗: \(error.localizedDescription)")
