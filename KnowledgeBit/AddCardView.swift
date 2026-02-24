@@ -80,26 +80,32 @@ struct AddCardView: View {
         }
         ToolbarItem(placement: .confirmationAction) {
           Button("儲存") {
+            let cardToSync: Card?
             if let card = cardToEdit {
-              // Edit mode: update existing card
               card.title = title
               card.content = content
               card.wordSet = selectedWordSet ?? wordSet
+              cardToSync = card
             } else {
-              // Add mode: create new card
               let newCard = Card(
                 title: title,
                 content: content,
                 wordSet: selectedWordSet ?? wordSet
               )
               modelContext.insert(newCard)
+              cardToSync = newCard
             }
-            
-            // Save to SwiftData
+
             do {
               try modelContext.save()
-              // Reload widget after successful save
               WidgetReloader.reloadAll()
+              if let sync = CardWordSetSyncService.createIfLoggedIn(authService: authService),
+                 let card = cardToSync {
+                Task {
+                  if let ws = card.wordSet { await sync.syncWordSet(ws) }
+                  await sync.syncCard(card)
+                }
+              }
               dismiss()
             } catch {
               print("❌ Failed to save card: \(error.localizedDescription)")
@@ -148,6 +154,7 @@ struct AddCardView: View {
         modelContext.insert(targetSet)
       }
 
+      var createdCards: [Card] = []
       for item in items {
         let card = Card(
           title: item.word,
@@ -155,10 +162,19 @@ struct AddCardView: View {
           wordSet: targetSet
         )
         modelContext.insert(card)
+        createdCards.append(card)
       }
 
       try modelContext.save()
       WidgetReloader.reloadAll()
+      if let sync = CardWordSetSyncService.createIfLoggedIn(authService: authService) {
+        Task {
+          await sync.syncWordSet(targetSet)
+          for card in createdCards {
+            await sync.syncCard(card)
+          }
+        }
+      }
       aiErrorMessage = nil
       dismiss()
     } catch {

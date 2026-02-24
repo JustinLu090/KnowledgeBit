@@ -197,16 +197,21 @@ struct WordSetDetailView: View {
   }
   
   private func deleteCards(offsets: IndexSet) {
+    let idsToDelete = offsets.map { cards[$0].id }
     withAnimation {
       for index in offsets {
         modelContext.delete(cards[index])
       }
-      
-      // Save to SwiftData
       do {
         try modelContext.save()
-        // Reload widget after successful delete
         WidgetReloader.reloadAll()
+        if let sync = CardWordSetSyncService.createIfLoggedIn(authService: authService) {
+          Task {
+            for id in idsToDelete {
+              await sync.deleteCard(id: id)
+            }
+          }
+        }
       } catch {
         print("❌ Failed to delete card: \(error.localizedDescription)")
       }

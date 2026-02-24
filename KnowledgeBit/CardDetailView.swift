@@ -8,6 +8,7 @@ struct CardDetailView: View {
   @Bindable var card: Card
   @Environment(\.dismiss) var dismiss
   @Environment(\.modelContext) private var modelContext
+  @EnvironmentObject private var authService: AuthService
   @State private var showingEditSheet = false
   @State private var showingDeleteConfirmation = false
 
@@ -48,6 +49,7 @@ struct CardDetailView: View {
     }
     .sheet(isPresented: $showingEditSheet) {
       AddCardView(cardToEdit: card)
+        .environmentObject(authService)
     }
     .confirmationDialog(
       "刪除卡片",
@@ -65,12 +67,15 @@ struct CardDetailView: View {
   
   /// Delete the card from SwiftData and dismiss the view
   private func deleteCard() {
+    let cardId = card.id
     withAnimation {
       modelContext.delete(card)
       do {
         try modelContext.save()
-        // Reload widget after successful delete
         WidgetReloader.reloadAll()
+        if let sync = CardWordSetSyncService.createIfLoggedIn(authService: authService) {
+          Task { await sync.deleteCard(id: cardId) }
+        }
         dismiss()
       } catch {
         print("❌ Failed to delete card: \(error.localizedDescription)")

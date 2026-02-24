@@ -8,18 +8,19 @@ import WidgetKit
 struct AddWordSetView: View {
   @Environment(\.modelContext) private var modelContext
   @Environment(\.dismiss) var dismiss
-  
+  @EnvironmentObject private var authService: AuthService
+
   @State private var title = ""
   @State private var selectedLevel: String? = nil
-  
+
   let levels = ["初級", "中級", "高級"]
-  
+
   var body: some View {
     NavigationStack {
       Form {
         Section(header: Text("基本資訊")) {
           TextField("標題（例如：韓文第六課）", text: $title)
-          
+
           Picker("等級", selection: $selectedLevel) {
             Text("無").tag(nil as String?)
             ForEach(levels, id: \.self) { level in
@@ -41,12 +42,13 @@ struct AddWordSetView: View {
               level: selectedLevel
             )
             modelContext.insert(newWordSet)
-            
-            // Save to SwiftData
+
             do {
               try modelContext.save()
-              // Reload widget after successful save
               WidgetReloader.reloadAll()
+              if let sync = CardWordSetSyncService.createIfLoggedIn(authService: authService) {
+                Task { await sync.syncWordSet(newWordSet) }
+              }
               dismiss()
             } catch {
               print("❌ Failed to save word set: \(error.localizedDescription)")

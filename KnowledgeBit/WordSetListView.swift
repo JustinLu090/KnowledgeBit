@@ -8,8 +8,9 @@ import WidgetKit
 struct WordSetListView: View {
   @Query(sort: \WordSet.createdAt, order: .reverse) private var wordSets: [WordSet]
   @Environment(\.modelContext) private var modelContext
+  @EnvironmentObject private var authService: AuthService
   @State private var showingAddWordSetSheet = false
-  
+
   var body: some View {
     VStack(spacing: 0) {
       if wordSets.isEmpty {
@@ -42,20 +43,26 @@ struct WordSetListView: View {
     }
     .sheet(isPresented: $showingAddWordSetSheet) {
       AddWordSetView()
+        .environmentObject(authService)
     }
   }
-  
+
   private func deleteWordSets(offsets: IndexSet) {
+    let idsToDelete = offsets.map { wordSets[$0].id }
     withAnimation {
       for index in offsets {
         modelContext.delete(wordSets[index])
       }
-      
-      // Save to SwiftData
       do {
         try modelContext.save()
-        // Reload widget after successful delete
         WidgetReloader.reloadAll()
+        if let sync = CardWordSetSyncService.createIfLoggedIn(authService: authService) {
+          Task {
+            for id in idsToDelete {
+              await sync.deleteWordSet(id: id)
+            }
+          }
+        }
       } catch {
         print("❌ Failed to delete word set: \(error.localizedDescription)")
       }

@@ -10,6 +10,7 @@ struct ReviewSessionView: View {
   @EnvironmentObject var experienceStore: ExperienceStore
   @EnvironmentObject var taskService: TaskService
   @EnvironmentObject var questService: DailyQuestService
+  @EnvironmentObject var authService: AuthService
   
   @State private var currentCardIndex = 0
   @State private var isFlipped = false
@@ -200,14 +201,17 @@ struct ReviewSessionView: View {
     
     // 應用複習結果
     srsService.applyReview(card: card, result: result)
-    
+
     // 增加今日複習數量
     taskService.incrementReviewCount()
     reviewedCount += 1
-    
+
     // 儲存變更
     try? modelContext.save()
-    
+    if let sync = CardWordSetSyncService.createIfLoggedIn(authService: authService) {
+      Task { await sync.syncCard(card) }
+    }
+
     // 移到下一張
     withAnimation {
       if currentCardIndex < dueCards.count - 1 {
@@ -238,5 +242,6 @@ struct ReviewSessionView: View {
     .environmentObject(ExperienceStore())
     .environmentObject(TaskService())
     .environmentObject(DailyQuestService())
+    .environmentObject(AuthService())
     .modelContainer(for: Card.self, inMemory: true)
 }
