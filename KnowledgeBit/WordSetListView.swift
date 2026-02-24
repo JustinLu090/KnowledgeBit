@@ -9,26 +9,43 @@ struct WordSetListView: View {
   @Query(sort: \WordSet.createdAt, order: .reverse) private var wordSets: [WordSet]
   @Environment(\.modelContext) private var modelContext
   @State private var showingAddWordSetSheet = false
-  
+
   var body: some View {
-    VStack(spacing: 0) {
-      if wordSets.isEmpty {
-        ContentUnavailableView(
-          "尚無單字集",
-          systemImage: "book.closed",
-          description: Text("點擊右上角 + 建立第一個單字集")
-        )
-        .padding()
-      } else {
-        List {
-          ForEach(wordSets) { wordSet in
-            NavigationLink {
-              WordSetDetailView(wordSet: wordSet)
-            } label: {
-              WordSetRowView(wordSet: wordSet)
+    ZStack {
+      Color(.systemGroupedBackground)
+        .ignoresSafeArea()
+
+      Group {
+        if wordSets.isEmpty {
+          ContentUnavailableView(
+            "尚無單字集",
+            systemImage: "book.closed",
+            description: Text("點擊右上角 + 建立第一個單字集")
+          )
+          .padding()
+        } else {
+          ScrollView {
+            LazyVStack(spacing: 14) {
+              ForEach(wordSets) { wordSet in
+                NavigationLink {
+                  WordSetDetailView(wordSet: wordSet)
+                } label: {
+                  PremiumWordSetRowView(wordSet: wordSet)
+                }
+                .buttonStyle(.plain)
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                  Button(role: .destructive) {
+                    deleteWordSet(wordSet)
+                  } label: {
+                    Label("刪除", systemImage: "trash")
+                  }
+                }
+              }
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 10)
           }
-          .onDelete(perform: deleteWordSets)
         }
       }
     }
@@ -44,17 +61,13 @@ struct WordSetListView: View {
       AddWordSetView()
     }
   }
-  
-  private func deleteWordSets(offsets: IndexSet) {
+
+  private func deleteWordSet(_ wordSet: WordSet) {
     withAnimation {
-      for index in offsets {
-        modelContext.delete(wordSets[index])
-      }
-      
-      // Save to SwiftData
+      modelContext.delete(wordSet)
+
       do {
         try modelContext.save()
-        // Reload widget after successful delete
         WidgetReloader.reloadAll()
       } catch {
         print("❌ Failed to delete word set: \(error.localizedDescription)")
@@ -62,52 +75,3 @@ struct WordSetListView: View {
     }
   }
 }
-
-// MARK: - Word Set Row View
-
-struct WordSetRowView: View {
-  let wordSet: WordSet
-  
-  var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      HStack {
-        Text(wordSet.title)
-          .font(.title3)
-          .bold()
-        
-        Spacer()
-        
-        // Level badge
-        if let level = wordSet.level {
-          Text(level)
-            .font(.caption2)
-            .fontWeight(.semibold)
-            .foregroundStyle(.white)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(levelColor(for: level))
-            .cornerRadius(8)
-        }
-      }
-      
-      Text("自訂單字集・共 \(wordSet.cards.count) 個單字")
-        .font(.subheadline)
-        .foregroundStyle(.secondary)
-    }
-    .padding(.vertical, 4)
-  }
-  
-  private func levelColor(for level: String) -> Color {
-    switch level {
-    case "初級":
-      return .green
-    case "中級":
-      return .orange
-    case "高級":
-      return .red
-    default:
-      return .gray
-    }
-  }
-}
-

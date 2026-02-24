@@ -21,31 +21,8 @@ final class WordSet {
   }
 }
 
-// MARK: - UserProfile Forward Declaration
-@Model
-final class UserProfile {
-  @Attribute(.unique) var userId: UUID
-  var displayName: String
-  var avatarData: Data?  // 頭貼圖片資料（儲存在資料庫中）
-  var avatarURL: String?  // Google 頭貼 URL（僅用於遠端載入）
-  var level: Int  // 用戶等級
-  var currentExp: Int  // 當前經驗值
-  var updatedAt: Date
-  
-  init(userId: UUID, displayName: String = "使用者", avatarData: Data? = nil, avatarURL: String? = nil, level: Int = 1, currentExp: Int = 0) {
-    self.userId = userId
-    self.displayName = displayName
-    self.avatarData = avatarData
-    self.avatarURL = avatarURL
-    self.level = level
-    self.currentExp = currentExp
-    self.updatedAt = Date()
-  }
-}
-
 // MARK: - App Group Configuration
-// 使用統一的 App Group identifier（與主 App 的 AppGroup.identifier 一致）
-private let sharedAppGroupIdentifier = "group.com.KnowledgeBit"
+private let sharedAppGroupIdentifier = "group.com.timmychen.KnowledgeBit"
 
 // MARK: - Shared SwiftData Container
 enum KnowledgeBitSharedContainer {
@@ -55,26 +32,12 @@ enum KnowledgeBitSharedContainer {
     let schema = Schema([
       Card.self,
       StudyLog.self,
-      WordSet.self,
-      UserProfile.self
+      WordSet.self
     ])
 
-    guard let groupURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) else {
+    guard FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) != nil else {
       print("⚠️ Widget: App Group not available")
       return nil
-    }
-    
-    // 確保 Application Support 目錄存在
-    let appSupportURL = groupURL.appendingPathComponent("Library/Application Support", isDirectory: true)
-    let fileManager = FileManager.default
-    
-    if !fileManager.fileExists(atPath: appSupportURL.path) {
-      do {
-        try fileManager.createDirectory(at: appSupportURL, withIntermediateDirectories: true, attributes: nil)
-        print("✅ Widget: Created Application Support directory")
-      } catch {
-        print("⚠️ Widget: Failed to create Application Support directory: \(error.localizedDescription)")
-      }
     }
 
     let configuration = ModelConfiguration(
@@ -94,14 +57,44 @@ enum KnowledgeBitSharedContainer {
 
   @MainActor
   static func fetchAllCards() -> [Card] {
-    guard let container = container else { return [] }
-    let context = container.mainContext
-    let descriptor = FetchDescriptor<Card>(sortBy: [SortDescriptor(\.createdAt, order: .forward)])
-    do {
-      return try context.fetch(descriptor)
-    } catch {
-      return []
+    // 先嘗試從 shared ModelContainer 讀取
+    if let container = container {
+      let context = container.mainContext
+      let descriptor = FetchDescriptor<Card>(sortBy: [SortDescriptor(\Card.createdAt, order: .forward)])
+      do {
+        let cards = try context.fetch(descriptor)
+        if !cards.isEmpty {
+          return cards
+        }
+        // 若 fetch 出來是空的，再嘗試 fallback 到 cachedCards
+      } catch {
+        // 如有錯誤，繼續走 fallback
+      }
     }
+
+    // fallback: 從 App Group 的 UserDefaults 讀取快取卡片資料
+    if let defaults = UserDefaults(suiteName: appGroupIdentifier),
+       let cached = defaults.array(forKey: "widget.cachedCards") as? [[String: String]],
+       !cached.isEmpty {
+      return cached.compactMap { dict in
+        let title = dict["title"] ?? ""
+        let content = dict["content"] ?? ""
+        let idStr = dict["id"] ?? UUID().uuidString
+        let wordSetTitle = dict["wordSetTitle"] ?? ""
+        let card = Card(title: title, content: content, wordSet: nil)
+        if let uuid = UUID(uuidString: idStr) {
+          card.id = uuid
+        }
+        if !wordSetTitle.isEmpty {
+          let ws = WordSet()
+          ws.title = wordSetTitle
+          card.wordSet = ws
+        }
+        return card
+      }
+    }
+
+    return []
   }
 
   @MainActor
@@ -115,15 +108,46 @@ enum KnowledgeBitSharedContainer {
 
   @MainActor
   static func fetchCardsByIDs(_ cardIDs: [String]) -> [Card] {
-    guard let container = container else { return [] }
-    let context = container.mainContext
-    let descriptor = FetchDescriptor<Card>()
-    do {
-      let allCards = try context.fetch(descriptor)
-      return allCards.filter { cardIDs.contains($0.id.uuidString) }
-    } catch {
-      return []
+    // 先試圖從 shared ModelContainer 讀取所有卡片，然後依照 cardIDs 順序回傳
+    if let container = container {
+      let context = container.mainContext
+      let descriptor = FetchDescriptor<Card>()
+      do {
+        let allCards = try context.fetch(descriptor)
+        // Preserve the order defined by cardIDs: build a map and then return cards in that order
+        let cardMap = Dictionary(uniqueKeysWithValues: allCards.map { ($0.id.uuidString, $0) })
+        let mapped = cardIDs.compactMap { cardMap[$0] }
+        if !mapped.isEmpty {
+          return mapped
+        }
+        // 若 mapped 為空，繼續走 fallback
+      } catch {
+        // 讀取錯誤，走 fallback
+      }
     }
+
+    // fallback: 從 App Group 的 cachedCards 找尋對應 id，並保留 cardIDs 的順序
+    if let defaults = UserDefaults(suiteName: appGroupIdentifier),
+       let cached = defaults.array(forKey: "widget.cachedCards") as? [[String: String]],
+       !cached.isEmpty {
+      let cardMap = Dictionary(uniqueKeysWithValues: cached.compactMap { dict -> (String, Card)? in
+        guard let id = dict["id"] else { return nil }
+        let title = dict["title"] ?? ""
+        let content = dict["content"] ?? ""
+        let wordSetTitle = dict["wordSetTitle"] ?? ""
+        let card = Card(title: title, content: content, wordSet: nil)
+        if let uuid = UUID(uuidString: id) { card.id = uuid }
+        if !wordSetTitle.isEmpty {
+          let ws = WordSet()
+          ws.title = wordSetTitle
+          card.wordSet = ws
+        }
+        return (id, card)
+      })
+      return cardIDs.compactMap { cardMap[$0] }
+    }
+
+    return []
   }
 }
 
@@ -235,7 +259,6 @@ struct CardEntry: TimelineEntry {
   let cardIndex: Int
   let cardIDs: [String]
   let todoCount: Int // 新增：用於鎖定畫面顯示剩餘張數
-  let todayDueCount: Int // 今日到期複習卡片數
 
   var currentCard: Card? {
     guard cardIndex >= 0 && cardIndex < cards.count else { return nil }
@@ -247,13 +270,12 @@ struct CardEntry: TimelineEntry {
   }
 
   // 初始化：一般情況
-  init(cards: [Card], index: Int, cardIDs: [String], date: Date = Date(), todayDueCount: Int = 0) {
+  init(cards: [Card], index: Int, cardIDs: [String], date: Date = Date()) {
     self.date = date
     self.cards = cards
     self.cardIndex = index
     self.cardIDs = cardIDs
     self.todoCount = cards.count // 簡單起見，這裡用本次輪播的總張數當作待辦數
-    self.todayDueCount = todayDueCount
   }
 
   // 初始化：Placeholder
@@ -263,7 +285,6 @@ struct CardEntry: TimelineEntry {
     self.cardIndex = 0
     self.cardIDs = []
     self.todoCount = 0
-    self.todayDueCount = 0
   }
 }
 
@@ -271,26 +292,15 @@ struct CardEntry: TimelineEntry {
 struct CardTimelineProvider: AppIntentTimelineProvider {
   typealias Intent = ConfigurationAppIntent
   typealias Entry = CardEntry
-  
-  // 從 App Group UserDefaults 讀取今日到期卡片數
-  private func getTodayDueCount() -> Int {
-    guard let defaults = UserDefaults(suiteName: sharedAppGroupIdentifier) else {
-      return 0
-    }
-    return defaults.integer(forKey: "today_due_count")
-  }
 
   func placeholder(in context: Context) -> CardEntry {
     let placeholderCard = Card(title: "TCP Handshake", content: "建立連線的三向交握過程...", wordSet: nil)
     let cardIDs = [placeholderCard.id.uuidString]
-    return CardEntry(cards: [placeholderCard], index: 0, cardIDs: cardIDs, todayDueCount: 5)
+    return CardEntry(cards: [placeholderCard], index: 0, cardIDs: cardIDs)
   }
 
   func snapshot(for configuration: ConfigurationAppIntent, in context: Context) async -> CardEntry {
     let allCards = await KnowledgeBitSharedContainer.fetchAllCards()
-    
-    // 讀取今日到期卡片數
-    let todayDueCount = getTodayDueCount()
 
     if allCards.isEmpty {
       return CardEntry()
@@ -323,14 +333,11 @@ struct CardTimelineProvider: AppIntentTimelineProvider {
       CardIndexStore.setCurrentIndex(validIndex)
     }
 
-    return CardEntry(cards: cardsForWidget, index: validIndex, cardIDs: cardIDs, todayDueCount: todayDueCount)
+    return CardEntry(cards: cardsForWidget, index: validIndex, cardIDs: cardIDs)
   }
 
   func timeline(for configuration: ConfigurationAppIntent, in context: Context) async -> Timeline<CardEntry> {
     let allCards = await KnowledgeBitSharedContainer.fetchAllCards()
-    
-    // 讀取今日到期卡片數
-    let todayDueCount = getTodayDueCount()
 
     if allCards.isEmpty {
       let entry = CardEntry()
@@ -375,8 +382,7 @@ struct CardTimelineProvider: AppIntentTimelineProvider {
         cards: cardsForWidget,
         index: (validIndex + i) % cardsForWidget.count,
         cardIDs: cardIDs,
-        date: entryDate,
-        todayDueCount: todayDueCount
+        date: entryDate
       )
       entries.append(entry)
     }
@@ -482,23 +488,6 @@ struct KnowledgeWidgetEntryView: View {
               .cornerRadius(4)
           }
           Spacer()
-          
-          // 今日到期數
-          if entry.todayDueCount > 0 {
-            HStack(spacing: 4) {
-              Image(systemName: "clock.fill")
-                .font(.caption2)
-              Text("\(entry.todayDueCount)")
-                .font(.caption2)
-                .fontWeight(.bold)
-            }
-            .foregroundStyle(.white)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(Color.orange.opacity(0.8))
-            .cornerRadius(4)
-          }
-          
           Image(systemName: "lightbulb.fill")
             .font(.caption)
             .foregroundColor(.yellow)
@@ -614,13 +603,14 @@ struct KnowledgeWidget: Widget {
     }
     .configurationDisplayName("知識小工具")
     .description("在桌面或鎖定畫面複習知識")
-    // ⚠️ 關鍵：加入 accessory 系列以支援鎖定畫面
     .supportedFamilies([
       .systemSmall,
       .systemMedium,
-      .accessoryCircular,     // 圓形 (鎖定畫面)
-      .accessoryRectangular,  // 矩形 (鎖定畫面)
-      .accessoryInline        // 文字列 (鎖定畫面/日期旁)
+      .systemLarge,
+      .systemExtraLarge,
+      .accessoryCircular,
+      .accessoryRectangular,
+      .accessoryInline
     ])
   }
 }

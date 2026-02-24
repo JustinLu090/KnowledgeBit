@@ -1,95 +1,77 @@
 import SwiftUI
 import SwiftData
 import Combine
+import Foundation
 
 struct QuizView: View {
-  // Optional: specific cards to quiz (e.g., from a WordSet)
-  // If nil, uses @Query to fetch all cards
   var cards: [Card]? = nil
-  
-  // Fallback query for all cards if cards parameter is nil
+
   @Query(sort: \Card.createdAt, order: .reverse) private var allCards: [Card]
-  
-  // Query for StudyLogs to calculate streak
   @Query(sort: \StudyLog.date, order: .reverse) private var logs: [StudyLog]
-  
+
   @Environment(\.dismiss) var dismiss
   @Environment(\.modelContext) private var modelContext
   @EnvironmentObject var taskService: TaskService
   @EnvironmentObject var experienceStore: ExperienceStore
   @EnvironmentObject var questService: DailyQuestService
 
-  // 2. 測驗狀態
   @State private var currentCardIndex = 0
   @State private var isFlipped = false
   @State private var showResult = false
   @State private var score = 0
-
-  // 為了不破壞原始順序，我們在出現時把卡片打亂
   @State private var shuffledCards: [Card] = []
-  
-  /// 本次測驗開始時間（用於每日任務「學習時長 5 分鐘」）
   @State private var sessionStartTime = Date()
-  
+
+  // ✅ 詳解展開：永遠可用（翻到背面就顯示按鈕）
+  @State private var showDetail = false
+
   private let srsService = SRSService()
-  
-  // Computed property to get cards to use
-  // 優先使用到期卡片，如果沒有到期卡片則使用所有卡片
+
   private var cardsToUse: [Card] {
-    if let specificCards = cards {
-      return specificCards
-    }
-    
-    // 優先取得到期卡片
+    if let specificCards = cards { return specificCards }
+
     let dueCards = srsService.getDueCards(now: Date(), context: modelContext)
-    if !dueCards.isEmpty {
-      return dueCards
-    }
-    
-    // 如果沒有到期卡片，使用所有卡片
+    if !dueCards.isEmpty { return dueCards }
+
     return allCards
   }
-  
+
   private var currentStreak: Int { logs.currentStreak() }
 
   var body: some View {
     Group {
       if showResult {
-        // 測驗結束畫面 - 使用新的 QuizResultView (全螢幕)
         QuizResultView(
           rememberedCards: score,
           totalCards: shuffledCards.count,
           streakDays: currentStreak,
           onFinish: {
             saveStudyLog()
-            // 學習時長：本次測驗耗時（分鐘），更新每日任務「學習時長 5 分鐘」
             let sessionMinutes = max(0, Int(Date().timeIntervalSince(sessionStartTime) / 60))
             if sessionMinutes > 0 {
               questService.recordStudyMinutes(sessionMinutes, experienceStore: experienceStore)
             }
             let isWordSetQuiz = (cards != nil && !(cards ?? []).isEmpty)
             if isWordSetQuiz {
-              // 單字集複習：更新「完成一本/兩本單字集複習」「答對率 90%」「全對」
               questService.recordWordSetCompleted(experienceStore: experienceStore)
               let total = shuffledCards.count
               let accuracy = total > 0 ? Int(Double(score) / Double(total) * 100) : 0
-              questService.recordWordSetQuizResult(accuracyPercent: accuracy, isPerfect: (total > 0 && score == total), experienceStore: experienceStore)
+              questService.recordWordSetQuizResult(
+                accuracyPercent: accuracy,
+                isPerfect: (total > 0 && score == total),
+                experienceStore: experienceStore
+              )
             } else {
-              // 每日測驗：完成一次 → 20 EXP，並計入「獲得 30 經驗值」進度
               if taskService.completeQuizTask(experienceStore: experienceStore) {
                 questService.recordExpGainedToday(20, experienceStore: experienceStore)
               }
             }
             dismiss()
           },
-          onRetry: {
-            retryQuiz()
-          }
+          onRetry: { retryQuiz() }
         )
       } else {
-        // 測驗進行中的畫面
         VStack {
-          // 上方進度條
           if !shuffledCards.isEmpty {
             Text("Question \(currentCardIndex + 1) / \(shuffledCards.count)")
               .font(.caption)
@@ -100,66 +82,154 @@ struct QuizView: View {
           Spacer()
 
           if shuffledCards.isEmpty {
-            // 如果沒有卡片
-            ContentUnavailableView("沒有卡片", systemImage: "tray.fill", description: Text("請先新增知識卡片才能開始測驗"))
+            ContentUnavailableView(
+              "沒有卡片",
+              systemImage: "tray.fill",
+              description: Text("請先新增知識卡片才能開始測驗")
+            )
           } else {
-        // 顯示卡片 (點擊翻面)
-        FlipCardView(
-          card: shuffledCards[currentCardIndex],
-          isFlipped: $isFlipped
-        )
-        .frame(height: 400)
-        .padding()
-        .onTapGesture {
-          withAnimation(.spring()) {
-            isFlipped.toggle()
-          }
-        }
+            let currentCard = shuffledCards[currentCardIndex]
 
-        Spacer()
-
-        // 下方按鈕 (只有翻面後才顯示)
-        if isFlipped {
-          HStack(spacing: 40) {
-            Button(action: { nextCard(isCorrect: false) }) {
-              VStack {
-                Image(systemName: "xmark.circle.fill")
-                  .font(.system(size: 50))
-                  .foregroundStyle(.red)
-                Text("忘了")
-                  .font(.caption)
+            FlipCardView(card: currentCard, isFlipped: $isFlipped)
+              .frame(height: 400)
+              .padding()
+              .onTapGesture {
+                withAnimation(.spring()) {
+                  isFlipped.toggle()
+                }
               }
-            }
 
-            Button(action: { nextCard(isCorrect: true) }) {
-              VStack {
-                Image(systemName: "checkmark.circle.fill")
-                  .font(.system(size: 50))
-                  .foregroundStyle(.green)
-                Text("記住了")
-                  .font(.caption)
+            Spacer()
+
+            if isFlipped {
+              // ✅ 背面：直接提供「查看詳解」＋「忘了/記住了」
+              VStack(spacing: 14) {
+
+                // 1) 查看詳解（永遠可用）
+                HStack(spacing: 12) {
+                  Button {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.88)) {
+                      showDetail.toggle()
+                    }
+                  } label: {
+                    HStack(spacing: 10) {
+                      Image(systemName: "text.justify.left")
+                        .font(.headline)
+                      Text(showDetail ? "收合詳解" : "查看詳解")
+                        .font(.headline.weight(.semibold))
+                      Spacer()
+                      Image(systemName: "chevron.right")
+                        .font(.headline.weight(.semibold))
+                        .rotationEffect(.degrees(showDetail ? 90 : 0))
+                        .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 16)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 54)
+                    .foregroundStyle(.primary)
+                    .background(
+                      RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.secondary.opacity(0.10))
+                    )
+                  }
+                  .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 20)
+
+                // 2) 詳解內容（展開才顯示 / Markdown）
+                if showDetail {
+                  detailBlock(markdown: currentCard.content)
+                    .padding(.horizontal, 20)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+
+                // 3) 忘了 / 記住了（按了直接提交 + 下一題）
+                HStack(spacing: 40) {
+                  Button {
+                    commitAndNext(isRemembered: false)
+                  } label: {
+                    VStack(spacing: 8) {
+                      Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 50))
+                        .foregroundStyle(.red)
+                      Text("忘了")
+                        .font(.caption.weight(.semibold))
+                    }
+                  }
+                  .buttonStyle(.plain)
+
+                  Button {
+                    commitAndNext(isRemembered: true)
+                  } label: {
+                    VStack(spacing: 8) {
+                      Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 50))
+                        .foregroundStyle(.green)
+                      Text("記住了")
+                        .font(.caption.weight(.semibold))
+                    }
+                  }
+                  .buttonStyle(.plain)
+                }
+                .padding(.top, 6)
+                .padding(.bottom, 6)
+
+                Text("可先查看詳解，再選擇是否記住")
+                  .font(.footnote)
+                  .foregroundStyle(.secondary)
+                  .padding(.bottom, 18)
               }
+
+            } else {
+              Text("點擊卡片查看答案")
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 50)
             }
-          }
-          .padding(.bottom, 50)
-        } else {
-          Text("點擊卡片查看答案")
-            .foregroundStyle(.secondary)
-            .padding(.bottom, 50)
-        }
           }
         }
       }
     }
     .onAppear {
-      // 進入畫面時，將資料庫的卡片洗牌，並記錄開始時間（供每日任務學習時長）
       shuffledCards = cardsToUse.shuffled()
       sessionStartTime = Date()
     }
   }
 
-  func saveStudyLog() {
-    // 使用當地時區的「當日開始」作為打卡日期，避免 UTC 與當地時間差
+  // MARK: - Detail Markdown Block
+
+  @ViewBuilder
+  private func detailBlock(markdown: String) -> some View {
+    let trimmed = markdown.trimmingCharacters(in: .whitespacesAndNewlines)
+
+    VStack(alignment: .leading, spacing: 10) {
+      HStack {
+        Text("詳細說明")
+          .font(.headline.weight(.semibold))
+        Spacer()
+      }
+
+      if trimmed.isEmpty {
+        Text("（尚未填寫詳細說明）")
+          .foregroundStyle(.secondary)
+      } else {
+        MarkdownTextView(markdown: trimmed)
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
+    }
+    .padding(16)
+    .background(
+      RoundedRectangle(cornerRadius: 18, style: .continuous)
+        .fill(Color.primary.opacity(0.04))
+    )
+    .overlay(
+      RoundedRectangle(cornerRadius: 18, style: .continuous)
+        .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+    )
+  }
+
+  // MARK: - Save / Next
+
+  private func saveStudyLog() {
     let calendar = Calendar.current
     let today = calendar.startOfDay(for: Date())
     let total = shuffledCards.count
@@ -168,31 +238,50 @@ struct QuizView: View {
     try? modelContext.save()
   }
 
-  // 切換下一張邏輯
-  func nextCard(isCorrect: Bool) {
-    if isCorrect {
-      score += 1
-      // 這裡未來可以加入邏輯：將卡片標記為「已精通」
-    }
+  // ✅ 按下忘了/記住了就直接前進
+  private func commitAndNext(isRemembered: Bool) {
+    if isRemembered { score += 1 }
 
     withAnimation {
       if currentCardIndex < shuffledCards.count - 1 {
-        isFlipped = false
         currentCardIndex += 1
+        isFlipped = false
+        showDetail = false   // ✅ 下一題預設收合
       } else {
         showResult = true
       }
     }
   }
-  
-  // Retry quiz - reset all state and reshuffle cards
-  func retryQuiz() {
+
+  private func retryQuiz() {
     withAnimation {
       currentCardIndex = 0
       isFlipped = false
       showResult = false
       score = 0
+      showDetail = false
       shuffledCards = cardsToUse.shuffled()
+      sessionStartTime = Date()
+    }
+  }
+}
+
+// MARK: - Minimal Markdown Renderer
+
+private struct MarkdownTextView: View {
+  let markdown: String
+
+  var body: some View {
+    if let attributed = try? AttributedString(markdown: markdown) {
+      Text(attributed)
+        .font(.body)
+        .foregroundStyle(.primary)
+        .textSelection(.enabled)
+    } else {
+      Text(markdown)
+        .font(.body)
+        .foregroundStyle(.primary)
+        .textSelection(.enabled)
     }
   }
 }
