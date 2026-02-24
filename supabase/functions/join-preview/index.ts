@@ -44,8 +44,7 @@ Deno.serve(async (req) => {
 });
 
 function htmlPage(title: string, message: string, inviteCode: string | null): string {
-  const appScheme = inviteCode ? `knowledgebit://join/${inviteCode}` : "knowledgebit://";
-  const webFallback = inviteCode ? `https://knowledgebit.io/join/${inviteCode}` : "#";
+  const codeAttr = inviteCode ? escapeHtml(inviteCode) : "";
   return `<!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
@@ -59,13 +58,29 @@ function htmlPage(title: string, message: string, inviteCode: string | null): st
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 24px; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #f2f2f7; color: #1c1c1e; }
     h1 { font-size: 1.5rem; margin: 0 0 12px; text-align: center; }
     p { font-size: 1rem; color: #3a3a3c; text-align: center; margin: 0 0 24px; }
-    a { display: inline-block; padding: 14px 28px; background: #007AFF; color: #fff; text-decoration: none; border-radius: 12px; font-weight: 600; }
+    .btn { display: inline-block; padding: 14px 28px; background: #007AFF; color: #fff; text-decoration: none; border-radius: 12px; font-weight: 600; border: none; font-size: 1rem; cursor: pointer; }
+    .btn:active { opacity: 0.9; }
+    #fallback { margin-top: 16px; font-size: 0.9rem; color: #6b6b6b; display: none; }
   </style>
 </head>
 <body>
   <h1>${escapeHtml(title)}</h1>
   <p>${escapeHtml(message)}</p>
-  <a href="${escapeHtml(appScheme)}">開啟 KnowledgeBit</a>
+  <button type="button" class="btn" id="openApp" data-code="${codeAttr}">開啟 KnowledgeBit</button>
+  <p id="fallback">若未自動開啟 App，請從主畫面或 App 資料庫開啟 KnowledgeBit。</p>
+  <script>
+    (function() {
+      var btn = document.getElementById("openApp");
+      var fallback = document.getElementById("fallback");
+      var code = btn.getAttribute("data-code") || "";
+      if (!code) return;
+      var scheme = "knowledgebit://join/" + code;
+      btn.addEventListener("click", function() {
+        window.location.href = scheme;
+        setTimeout(function() { fallback.style.display = "block"; }, 2000);
+      });
+    })();
+  </script>
 </body>
 </html>`;
 }

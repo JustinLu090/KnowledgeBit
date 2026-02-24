@@ -22,6 +22,9 @@ final class CommunityViewModel: ObservableObject {
   /// 待處理請求數量（用於 tab badge）
   var pendingCount: Int { pendingRequests.count }
 
+  /// 目前進行中的 refresh Task（用於 single-flight：新 refresh 會取消前一個，避免並發請求導致 -999）
+  private var refreshTask: Task<Void, Never>?
+
   /// 分享連結字串（需先載入 myInviteCode）
   var inviteShareURL: String? {
     guard let code = myInviteCode else { return nil }
@@ -29,6 +32,15 @@ final class CommunityViewModel: ObservableObject {
   }
 
   // MARK: - 載入資料
+
+  /// 是否為「請求被取消」類錯誤（Task 取消或 NSURLErrorCancelled），不需顯示給使用者
+  private static func isCancelledError(_ error: Error) -> Bool {
+    if error is CancellationError { return true }
+    let ns = error as NSError
+    if ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled { return true }
+    if ns.domain == NSURLErrorDomain && ns.code == -999 { return true }
+    return false
+  }
 
   func loadFriends(authService: AuthService) async {
     guard let currentUserId = authService.currentUserId else { return }
@@ -40,6 +52,7 @@ final class CommunityViewModel: ObservableObject {
       let service = FriendService(authService: authService)
       friends = try await service.fetchFriends(currentUserId: currentUserId)
     } catch {
+      if Self.isCancelledError(error) { return }
       errorMessage = "無法載入好友列表"
       print("⚠️ [Community] fetchFriends 失敗: \(error)")
     }
@@ -56,16 +69,24 @@ final class CommunityViewModel: ObservableObject {
       pendingRequests = try await service.fetchPendingRequests(currentUserId: currentUserId)
       sentRequestReceiverIds = try await service.fetchSentRequestReceiverIds(currentUserId: currentUserId)
     } catch {
+      if Self.isCancelledError(error) { return }
       errorMessage = "無法載入好友請求"
       print("⚠️ [Community] fetchPendingRequests 失敗: \(error)")
     }
   }
 
   /// 一次載入好友與待處理請求，並更新邀請碼與 QR
+  /// 若已有 refresh 進行中會先取消再開始新的，避免並發請求；View 消失時 Task 被取消的錯誤會自動忽略
   func refresh(authService: AuthService) async {
-    await loadFriends(authService: authService)
-    await loadPendingRequests(authService: authService)
-    await loadInviteCode(authService: authService)
+    refreshTask?.cancel()
+    let task = Task {
+      await loadFriends(authService: authService)
+      await loadPendingRequests(authService: authService)
+      await loadInviteCode(authService: authService)
+    }
+    refreshTask = task
+    defer { refreshTask = nil }
+    await task.value
   }
 
   /// 載入目前使用者的 invite_code 並產生 QR 圖
@@ -82,6 +103,7 @@ final class CommunityViewModel: ObservableObject {
         inviteQRImage = nil
       }
     } catch {
+      if Self.isCancelledError(error) { return }
       myInviteCode = nil
       inviteQRImage = nil
       print("⚠️ [Community] fetchMyInviteCode 失敗: \(error)")

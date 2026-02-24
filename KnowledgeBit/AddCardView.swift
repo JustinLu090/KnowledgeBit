@@ -72,6 +72,7 @@ struct AddCardView: View {
             .frame(height: 200)
         }
       }
+      .scrollDismissesKeyboard(.interactively)
       .navigationTitle(isEditMode ? "編輯卡片" : "新增卡片")
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {

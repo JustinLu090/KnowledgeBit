@@ -52,6 +52,7 @@ struct EditProfileView: View {
           Text("顯示名稱")
         }
       }
+      .scrollDismissesKeyboard(.interactively)
       .navigationTitle("編輯個人資料")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {

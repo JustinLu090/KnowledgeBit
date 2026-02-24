@@ -31,6 +31,7 @@ struct CommunityView: View {
         .padding(.top, 16)
         .padding(.bottom, 32)
       }
+      .scrollDismissesKeyboard(.interactively)
       .background(Color(.systemGroupedBackground))
       .navigationTitle("社群")
       .navigationBarTitleDisplayMode(.large)
@@ -57,8 +58,8 @@ struct CommunityView: View {
           Text("確定要解除與 \(f.displayName) 的好友關係嗎？")
         }
       }
-      .onAppear {
-        Task { await viewModel.refresh(authService: authService) }
+      .task {
+        await viewModel.refresh(authService: authService)
       }
       .refreshable {
         await viewModel.refresh(authService: authService)

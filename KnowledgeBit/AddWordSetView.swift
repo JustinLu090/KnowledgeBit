@@ -28,6 +28,7 @@ struct AddWordSetView: View {
           }
         }
       }
+      .scrollDismissesKeyboard(.interactively)
       .navigationTitle("新增單字集")
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {

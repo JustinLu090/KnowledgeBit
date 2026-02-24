@@ -22,6 +22,13 @@ final class AuthService: ObservableObject {
   private let client: SupabaseClient
   private var authTask: Task<Void, Never>?
   
+  /// 上次成功同步 user_profiles 的時間（用於 debounce，避免頻繁請求導致 520）
+  private var lastProfileSyncTime: Date?
+  /// 同步中時跳過重複呼叫（single-flight）
+  private var profileSyncInProgress = false
+  /// Debounce 間隔：此時間內不重複打 Supabase
+  private static let profileSyncDebounceInterval: TimeInterval = 45
+  
   // MARK: - App Group UserDefaults（與 Widget 共用；AuthService 為 @MainActor，讀寫皆在主線程，符合 CFPrefs 規範）
   private static let appGroupKeys = (
     displayName: AppGroup.Keys.displayName,
@@ -382,58 +389,71 @@ final class AuthService: ObservableObject {
   
   /// 強制以目前 Auth session 的 userMetadata 同步到 Supabase user_profiles 與 App Group（登入成功或 App 啟動時呼叫）
   /// 若 session 中有 full_name / name 或 picture / avatar_url，則 upsert 到資料庫並寫入 App Group
+  /// 內含 debounce（45s 內不重複打）、single-flight（同步中不重入）、520/5xx 時重試一次
   func syncProfileFromAuthToSupabaseAndAppGroup() async {
     guard let userId = currentUserId else { return }
+    if profileSyncInProgress { return }
+    if let last = lastProfileSyncTime, Date().timeIntervalSince(last) < Self.profileSyncDebounceInterval {
+      return
+    }
+    profileSyncInProgress = true
+    defer { profileSyncInProgress = false }
+    
     let (displayName, avatarURL) = metadataDisplayNameAndAvatar()
     let name = (displayName ?? currentUserDisplayName) ?? "使用者"
     let finalName = name.isEmpty ? "使用者" : name
     let avatar = avatarURL ?? currentUserAvatarURL
     
     // 寫入 App Group（與 Widget 一致）
-    // 不立即刷新，因為可能還有其他資料需要同步（如 EXP、Level）
     saveProfileToAppGroup(displayName: finalName, avatarURL: avatar, shouldReloadWidget: false)
     
-    // 依 user_id 更新或插入，避免 upsert 預設用 primary key 導致 duplicate key on user_id
     struct ProfileUpdate: Encodable {
       let display_name: String
       let avatar_url: String?
       let updated_at: Date
-      
-      enum CodingKeys: String, CodingKey {
-        case display_name
-        case avatar_url
-        case updated_at
-      }
+      enum CodingKeys: String, CodingKey { case display_name, avatar_url, updated_at }
     }
     struct ProfileInsert: Encodable {
       let user_id: UUID
       let display_name: String
       let avatar_url: String?
       let updated_at: Date
-      
-      enum CodingKeys: String, CodingKey {
-        case user_id
-        case display_name
-        case avatar_url
-        case updated_at
-      }
+      enum CodingKeys: String, CodingKey { case user_id, display_name, avatar_url, updated_at }
     }
-    do {
-      let insertPayload = ProfileInsert(user_id: userId, display_name: finalName, avatar_url: avatar, updated_at: Date())
+    let insertPayload = ProfileInsert(user_id: userId, display_name: finalName, avatar_url: avatar, updated_at: Date())
+    let updatePayload = ProfileUpdate(display_name: finalName, avatar_url: avatar, updated_at: Date())
+    
+    func performSync() async throws {
       do {
         try await client.from("user_profiles").insert(insertPayload).execute()
       } catch {
-        // 已存在則改為 update
-        let updatePayload = ProfileUpdate(display_name: finalName, avatar_url: avatar, updated_at: Date())
         try await client
           .from("user_profiles")
           .update(updatePayload)
           .eq(AppGroup.SupabaseFields.userId, value: userId)
           .execute()
       }
+    }
+    
+    do {
+      try await performSync()
+      lastProfileSyncTime = Date()
       print("✅ [Auth] 已強制同步 display_name、avatar_url 至 Supabase 與 App Group")
     } catch {
-      print("⚠️ [Auth] 同步 user_profiles 失敗: \(error.localizedDescription)")
+      let desc = error.localizedDescription
+      let isRetryable = desc.contains("520") || desc.contains("Status Code: 5")
+      if isRetryable {
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        do {
+          try await performSync()
+          lastProfileSyncTime = Date()
+          print("✅ [Auth] 已強制同步 display_name、avatar_url 至 Supabase 與 App Group（重試成功）")
+        } catch {
+          print("⚠️ [Auth] 同步 user_profiles 失敗（含重試）: \(error.localizedDescription)")
+        }
+      } else {
+        print("⚠️ [Auth] 同步 user_profiles 失敗: \(desc)")
+      }
     }
   }
   
