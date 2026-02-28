@@ -33,7 +33,7 @@ final class StrategicBattleViewModel: ObservableObject {
   @Published private(set) var pendingKE: [Int: Int] = [:]
 
   /// 本小時玩家可用積分（KE）總額
-  @Published private(set) var hourlyBudget: Int = 1000
+  @Published private(set) var hourlyBudget: Int
 
   /// 距整點結算秒數
   @Published private(set) var secondsToTopOfHour: Int = 0
@@ -41,16 +41,118 @@ final class StrategicBattleViewModel: ObservableObject {
   /// 整點前最後 2 分鐘鎖定
   @Published private(set) var isSettlementLocked: Bool = false
 
+  /// 顯示「格子上限 400」提示（設為非 nil 時彈出，關閉後請清空）
+  @Published var cellCapAlertMessage: String? = nil
+
+  /// 上一輪結算的雙方動作統整（結算後或進入畫面時填入，供 UI 顯示）
+  @Published private(set) var lastRoundSummary: BattleRoundSummary? = nil
+
   private var timerCancellable: AnyCancellable?
   private var nowProvider: () -> Date
+  private let roomId: UUID?
+  private let authService: AuthService?
+  private let pendingStore = BattlePendingStore()
+  /// 每個結算週期可以使用的基礎 KE 上限（由 initialKE 決定，例如 400）
+  private let baseHourlyBudget: Int
+  private let settlementBucketSeconds: Int
+  private var lastBucketStart: Date
+  private let onConsumedKE: ((Int) -> Void)?
+
+  private var battleRoomService: BattleRoomService? {
+    guard let auth = authService, let uid = auth.currentUserId else { return nil }
+    return BattleRoomService(authService: auth, userId: uid)
+  }
+
+  private func currentHourBucket() -> Date {
+    let now = nowProvider()
+    let cal = Calendar.current
+    var comps = cal.dateComponents([.year, .month, .day, .hour], from: now)
+    comps.minute = 0
+    comps.second = 0
+    return cal.date(from: comps) ?? now
+  }
+
+  /// 依 settlementBucketSeconds 取得目前 bucket 起始時間
+  private func currentBucket() -> Date {
+    if settlementBucketSeconds == 3600 { return currentHourBucket() }
+    let now = nowProvider()
+    let bucket = floor(now.timeIntervalSince1970 / Double(settlementBucketSeconds)) * Double(settlementBucketSeconds)
+    return Date(timeIntervalSince1970: bucket)
+  }
+
+  private var lockoutSeconds: Int {
+    // 正式：整點前 2 分鐘鎖定；測試縮短 bucket 時避免永遠鎖住
+    if settlementBucketSeconds >= 3600 { return 120 }
+    return 10
+  }
 
   // MARK: - Init
 
-  init(nowProvider: @escaping () -> Date = { Date() }) {
+  init(
+    roomId: UUID? = nil,
+    authService: AuthService? = nil,
+    initialKE: Int = 1000,
+    settlementBucketSeconds: Int = 3600,
+    onConsumedKE: ((Int) -> Void)? = nil,
+    nowProvider: @escaping () -> Date = { Date() }
+  ) {
+    self.roomId = roomId
+    self.authService = authService
+    let clampedInitial = max(0, initialKE)
+    self.hourlyBudget = clampedInitial
+    self.baseHourlyBudget = clampedInitial
+    self.settlementBucketSeconds = max(60, settlementBucketSeconds)
     self.nowProvider = nowProvider
+    self.lastBucketStart = Date.distantPast
+    self.onConsumedKE = onConsumedKE
     self.bootstrapInitialBoard()
     self.startTimer()
     self.refreshCountdown()
+    self.lastBucketStart = self.currentBucket()
+  }
+
+  /// Load board from cloud when roomId and auth are set; otherwise no-op.
+  /// 同時還原本小時已暫存的 KE 分配（上次離開前的操作），可繼續修改直到整點前 2 分鐘鎖定。
+  func loadInitialBoard() async {
+    guard let rid = roomId, let service = battleRoomService else { return }
+    let bucket = currentBucket()
+    do {
+      #if DEBUG
+      print("[Battle] loadInitialBoard bucket=\(bucket) bucketSeconds=\(settlementBucketSeconds)")
+      #endif
+      let dtos = try await service.fetchBoardState(roomId: rid, hourBucket: bucket, bucketSeconds: settlementBucketSeconds)
+      if dtos.count == 16 {
+        // 依 id 排序，確保 cells[i] 對應格子 i（左上 id=0 → #1 紅隊出發，右下 id=15 → #16 藍隊出發）
+        let sorted = dtos.sorted(by: { $0.id < $1.id })
+        cells = sorted.map { dto in
+          Cell(
+            id: dto.id,
+            owner: Owner(rawValue: dto.owner) ?? .neutral,
+            hpNow: dto.hp_now,
+            hpMax: dto.hp_max,
+            decayPerHour: dto.decay_per_hour,
+            enemyPressure: dto.enemy_pressure
+          )
+        }
+      }
+      // 還原本小時已暫存的 KE 分配，下次點開仍可看到並修改
+      if let loaded = pendingStore.load(roomId: rid, hourBucket: bucket), !loaded.isEmpty {
+        pendingKE = loaded
+        #if DEBUG
+        print("[Battle] restore pendingKE from store:", loaded)
+        #endif
+      }
+      // 載入上一輪的雙方動作統整，一進畫面就顯示（含雙方皆未投入時）
+      let prevBucket = Date(timeIntervalSince1970: bucket.timeIntervalSince1970 - Double(settlementBucketSeconds))
+      if let summary = try? await service.fetchRoundSummary(roomId: rid, hourBucket: prevBucket, bucketSeconds: settlementBucketSeconds) {
+        lastRoundSummary = summary
+      }
+    } catch {
+      #if DEBUG
+      print("[Battle] loadInitialBoard error:", error)
+      #endif
+      // Keep bootstrap board on error
+    }
   }
 
   deinit {
@@ -124,25 +226,48 @@ final class StrategicBattleViewModel: ObservableObject {
     pendingKE[id, default: 0]
   }
 
-  /// 更新選取格子的投入 KE（會自動 clamp 到剩餘可用）
+  /// 每格 KE 上限（與後端 hp_max 一致）
+  private let perCellKECap = 400
+
+  /// 該格本輪最多可投入的 KE：己方格子為「不超過 hpMax - hpNow」，進攻則不超過 400
+  func maxAllowedKE(for id: Int) -> Int {
+    let c = cells[id]
+    if c.owner == .player {
+      return max(0, min(perCellKECap, c.hpMax - c.hpNow))
+    }
+    return perCellKECap
+  }
+
+  /// 更新選取格子的投入 KE（會自動 clamp 到剩餘可用，且不超過格子上限；加固時不讓 HP 超過 400）
   func updatePendingKE(for id: Int, to newValue: Int) {
     guard !isSettlementLocked else { return }
     let clamped = max(0, newValue)
 
-    // 先移除舊值，再檢查剩餘額度
     let othersSum = pendingKE
       .filter { $0.key != id }
       .map { $0.value }
       .reduce(0, +)
 
-    let maxAllowed = max(0, hourlyBudget - othersSum)
-    let finalValue = min(clamped, maxAllowed)
+    let maxByBudget = max(0, hourlyBudget - othersSum)
+    let maxForCell = maxAllowedKE(for: id)
+    let finalValue = min(clamped, maxByBudget, maxForCell)
+
+    if clamped > maxForCell, maxForCell < perCellKECap {
+      cellCapAlertMessage = "格子上限 \(perCellKECap)，此格目前 HP 已達 \(cells[id].hpNow)/\(cells[id].hpMax)，最多只能再投入 \(maxForCell) KE。"
+    }
 
     if finalValue == 0 {
       pendingKE.removeValue(forKey: id)
     } else {
       pendingKE[id] = finalValue
     }
+    persistPendingIfNeeded()
+  }
+
+  /// 將本小時 KE 分配寫入本地，離開再進入仍可看到並修改
+  private func persistPendingIfNeeded() {
+    guard let rid = roomId else { return }
+    pendingStore.save(roomId: rid, hourBucket: currentBucket(), allocations: pendingKE)
   }
 
   /// 依企劃：HP_next = HP_now + KE_in − KE_out − Decay
@@ -157,8 +282,96 @@ final class StrategicBattleViewModel: ObservableObject {
   // MARK: - Settlement
 
   func settleHour() {
-    // 1) 路徑有效性檢查（簡化版）
-    //    - 只有「當下仍為 attackable」的目標才算有效，否則退回
+    #if DEBUG
+    print("[Battle] settleHour() called; pendingKE =", pendingKE, "remainingKE =", remainingKE)
+    #endif
+    if let rid = roomId, let service = battleRoomService {
+      settleHourWithCloud(roomId: rid, service: service)
+      return
+    }
+    settleHourLocal()
+  }
+
+  private func settleHourWithCloud(roomId rid: UUID, service: BattleRoomService) {
+    let newHourBucket = currentBucket()
+    let previousHourBucket = Date(timeIntervalSince1970: newHourBucket.timeIntervalSince1970 - Double(settlementBucketSeconds))
+    #if DEBUG
+    print("[Battle] settleHourWithCloud room=\(rid) prevBucket=\(previousHourBucket) newBucket=\(newHourBucket) bucketSeconds=\(settlementBucketSeconds) pendingKE=", pendingKE)
+    #endif
+    let toSubmit = pendingKE
+    let beforeCells = cells
+    let spent = toSubmit.values.reduce(0, +)
+    pendingKE.removeAll()
+    selectedCellID = nil
+    // 本輪已投入的 KE 從總池扣除，若本輪用完則下一輪維持 0，直到再透過測驗賺取 KE
+    if spent > 0 {
+      hourlyBudget = max(0, hourlyBudget - spent)
+      onConsumedKE?(spent)
+    }
+    pendingStore.remove(roomId: rid, hourBucket: previousHourBucket)
+    WidgetReloader.reloadAll()
+
+    Task { @MainActor in
+      do {
+        try await service.submitAllocations(roomId: rid, hourBucket: previousHourBucket, allocations: toSubmit, bucketSeconds: settlementBucketSeconds)
+        var dtos = try await service.fetchBoardState(roomId: rid, hourBucket: newHourBucket, bucketSeconds: settlementBucketSeconds)
+        #if DEBUG
+        print("[Battle] after settlement board cells count=", dtos.count)
+        #endif
+
+        // 僅在「新盤面 0 格己方、之前有格」時才 refetch，避免雙人局時把「被對方贏走一格」的正確結果覆蓋成錯誤的 refetch（遞迴可能漏算對方 allocation）
+        let beforePlayerCount = beforeCells.filter { $0.owner == .player }.count
+        let newPlayerCount = dtos.filter { $0.owner == "player" }.count
+        if toSubmit.isEmpty, beforePlayerCount > 0, newPlayerCount == 0 {
+          #if DEBUG
+          print("[Battle] new board has 0 player cells (suspicious), refetching once...")
+          #endif
+          try? await Task.sleep(nanoseconds: 400_000_000)
+          if let refetched = try? await service.fetchBoardState(roomId: rid, hourBucket: newHourBucket, bucketSeconds: settlementBucketSeconds), refetched.count == 16 {
+            dtos = refetched
+          }
+        }
+
+        if dtos.count == 16 {
+          let sorted = dtos.sorted(by: { $0.id < $1.id })
+          let newCells = sorted.map { dto in
+            Cell(
+              id: dto.id,
+              owner: Owner(rawValue: dto.owner) ?? .neutral,
+              hpNow: dto.hp_now,
+              hpMax: dto.hp_max,
+              decayPerHour: dto.decay_per_hour,
+              enemyPressure: dto.enemy_pressure
+            )
+          }
+          #if DEBUG
+          if !toSubmit.isEmpty {
+            let affected = toSubmit.keys.sorted()
+            for id in affected {
+              let before = beforeCells[id]
+              let after = newCells[id]
+              print("[Battle][Debug] cell", id,
+                    "owner", before.owner.rawValue, "->", after.owner.rawValue,
+                    "hp", before.hpNow, "->", after.hpNow)
+            }
+          }
+          #endif
+          cells = newCells
+        }
+        // 結算後取得該輪雙方投入統整，供 UI 顯示
+        if let summary = try? await service.fetchRoundSummary(roomId: rid, hourBucket: previousHourBucket, bucketSeconds: settlementBucketSeconds) {
+          lastRoundSummary = summary
+        }
+      } catch {
+        #if DEBUG
+        print("[Battle] settleHourWithCloud error:", error)
+        #endif
+        // Keep current board on error
+      }
+    }
+  }
+
+  private func settleHourLocal() {
     var refundable = 0
     var validAttacks: [Int: Int] = [:]
     var reinforces: [Int: Int] = [:]
@@ -177,18 +390,20 @@ final class StrategicBattleViewModel: ObservableObject {
       }
     }
 
-    // 2) 扣除消耗、退回無效投入
     let spent = pendingKE.values.reduce(0, +) - refundable
-    hourlyBudget = max(0, hourlyBudget - spent) + refundable
+    if spent > 0 {
+      hourlyBudget = max(0, hourlyBudget - spent) + refundable
+      onConsumedKE?(spent)
+    } else {
+      hourlyBudget = max(0, hourlyBudget - spent) + refundable
+    }
 
-    // 3) 加固：HP 增加（上限 hpMax）
     for (id, ke) in reinforces {
       var c = cells[id]
       c.hpNow = min(c.hpMax, c.hpNow + ke)
       cells[id] = c
     }
 
-    // 4) 先承受 enemyPressure + decay
     for i in cells.indices {
       var c = cells[i]
       if c.enemyPressure > 0 {
@@ -201,11 +416,9 @@ final class StrategicBattleViewModel: ObservableObject {
       cells[i] = c
     }
 
-    // 5) 進攻：攻擊KE vs 守方HP
     for (id, atk) in validAttacks {
       var c = cells[id]
       let defHP = c.hpNow
-
       if atk > defHP {
         c.owner = .player
         c.hpNow = min(c.hpMax, atk - defHP)
@@ -216,15 +429,16 @@ final class StrategicBattleViewModel: ObservableObject {
       cells[id] = c
     }
 
-    // 6) 重置本小時暫存，重新抽敵方壓力
     pendingKE.removeAll()
     selectedCellID = nil
     rollEnemyPressure()
-
-    // 7) 每小時回補到 1000（可之後再換成你要的規則）
-    hourlyBudget = 1000
-
-    // 若被全滅：保留「外環可進攻」規則（不自動給角落），由 UI 提示玩家重新擴張
+    // 不再在每個結算週期自動把 KE 回補到基礎上限；
+    // 若本輪 KE 用完，下一輪維持 0，直到使用者再透過測驗賺取 KE。
+    if let rid = roomId {
+      let nowBucket = currentBucket()
+      let prevBucket = Date(timeIntervalSince1970: nowBucket.timeIntervalSince1970 - Double(settlementBucketSeconds))
+      pendingStore.remove(roomId: rid, hourBucket: prevBucket)
+    }
     WidgetReloader.reloadAll()
   }
 
@@ -242,8 +456,21 @@ final class StrategicBattleViewModel: ObservableObject {
   }
 
   private func tick() {
+    // 避免 Timer 漂移導致「跳過 0 秒」而錯過結算：
+    // 只要偵測到 bucket 起始時間已切換，就立刻結算一次。
+    let bucketStart = currentBucket()
+    if bucketStart > lastBucketStart {
+      #if DEBUG
+      print("[Battle] bucket boundary crossed. last=\(lastBucketStart) new=\(bucketStart)")
+      #endif
+      lastBucketStart = bucketStart
+      settleHour()
+      refreshCountdown()
+      return
+    }
+
     refreshCountdown()
-    isSettlementLocked = secondsToTopOfHour <= 120
+    isSettlementLocked = secondsToTopOfHour <= lockoutSeconds
     if secondsToTopOfHour <= 0 {
       settleHour()
       refreshCountdown()
@@ -252,60 +479,42 @@ final class StrategicBattleViewModel: ObservableObject {
 
   private func refreshCountdown() {
     let now = nowProvider()
-    let cal = Calendar.current
-    var comps = cal.dateComponents([.year, .month, .day, .hour], from: now)
-    comps.minute = 0
-    comps.second = 0
-    let thisHourTop = cal.date(from: comps) ?? now
-    let nextHourTop = cal.date(byAdding: .hour, value: 1, to: thisHourTop) ?? now.addingTimeInterval(3600)
-    let diff = Int(nextHourTop.timeIntervalSince(now))
+    let nowEpoch = now.timeIntervalSince1970
+    let bucket = Double(settlementBucketSeconds)
+    let nextBoundary = (floor(nowEpoch / bucket) + 1) * bucket
+    let diff = Int(nextBoundary - nowEpoch)
     secondsToTopOfHour = max(0, diff)
   }
 
   // MARK: - Board bootstrap (UPDATED)
 
   private func bootstrapInitialBoard() {
-    // 初始：隨機生成少量敵方；然後若玩家沒有領地，直接給一個「空的角落」當基地
     let hpMax = 400
     cells = (0..<16).map { id in
-      let isEnemy = (id % 7 == 0) // sparse
+      var owner: Owner = .neutral
+      var hpNow = 120
+
+      if id == 0 {
+        // 左上角：敵方起始格
+        owner = .enemy
+        hpNow = 220
+      } else if id == 15 {
+        // 右下角：玩家起始格
+        owner = .player
+        hpNow = 240
+      }
+
       return Cell(
         id: id,
-        owner: isEnemy ? .enemy : .neutral,
-        hpNow: isEnemy ? 220 : 120,
+        owner: owner,
+        hpNow: hpNow,
         hpMax: hpMax,
         decayPerHour: 10,
         enemyPressure: 0
       )
     }
 
-    ensureInitialCornerForPlayer()
     rollEnemyPressure()
-  }
-
-  /// ✅ 新需求：一開始沒有領地 → 直接在四角找一個「沒有人的角落」分配給玩家（預設藍隊）
-  private func ensureInitialCornerForPlayer() {
-    guard occupiedCount == 0 else { return }
-
-    let corners = [0, 3, 12, 15]
-    // 找非敵方的角落（neutral），直接給玩家
-    if let pick = corners.first(where: { cells[$0].owner == .neutral }) {
-      var c = cells[pick]
-      c.owner = .player
-      c.hpNow = max(c.hpNow, 240)   // 起始基地 HP（你可調）
-      c.enemyPressure = 0
-      cells[pick] = c
-      return
-    }
-
-    // 若四角都被敵方佔（極端情況），強制把第一個角落轉為 neutral 再給玩家
-    if let fallback = corners.first {
-      var c = cells[fallback]
-      c.owner = .player
-      c.hpNow = 240
-      c.enemyPressure = 0
-      cells[fallback] = c
-    }
   }
 
   private func rollEnemyPressure() {

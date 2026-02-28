@@ -2,13 +2,18 @@
 // 社群功能：好友請求、好友列表、搜尋加好友
 
 import SwiftUI
+import SwiftData
 
 struct CommunityView: View {
   @EnvironmentObject var authService: AuthService
+  @Environment(\.modelContext) private var modelContext
   @ObservedObject var viewModel: CommunityViewModel
   @ObservedObject var pendingInviteStore: PendingInviteStore
   @FocusState private var isSearchFocused: Bool
   @State private var friendToDelete: FriendItem?
+  @State private var wordSetInvitations: [WordSetInvitationItem] = []
+  @State private var wordSetInvitationsLoading = false
+  @State private var respondingInvitationId: UUID?
 
   var body: some View {
     NavigationStack {
@@ -18,6 +23,11 @@ struct CommunityView: View {
           inviteSection
           // 搜尋欄
           searchSection
+
+          // 單字集邀請（待確認）
+          if !wordSetInvitations.isEmpty {
+            wordSetInvitationsSection
+          }
 
           // 好友請求（有 pending 時顯示）
           if !viewModel.pendingRequests.isEmpty {
@@ -60,9 +70,11 @@ struct CommunityView: View {
       }
       .task {
         await viewModel.refresh(authService: authService)
+        await loadWordSetInvitations()
       }
       .refreshable {
         await viewModel.refresh(authService: authService)
+        await loadWordSetInvitations()
       }
       .alert("加入好友", isPresented: Binding(
         get: { pendingInviteStore.inviteCode != nil },
@@ -199,6 +211,86 @@ struct CommunityView: View {
     }
   }
 
+  // MARK: - 單字集邀請區塊
+
+  private var wordSetInvitationsSection: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      HStack {
+        Text("單字集邀請")
+          .font(.system(size: 20, weight: .semibold))
+          .foregroundStyle(.primary)
+        Text("\(wordSetInvitations.count)")
+          .font(.system(size: 14))
+          .foregroundStyle(.white)
+          .padding(.horizontal, 8)
+          .padding(.vertical, 2)
+          .background(Color.orange)
+          .cornerRadius(10)
+      }
+      .padding(.horizontal, 4)
+
+      VStack(spacing: 0) {
+        ForEach(wordSetInvitations) { inv in
+          WordSetInvitationRow(
+            invitation: inv,
+            isResponding: respondingInvitationId == inv.id,
+            onAccept: {
+              Task { await acceptWordSetInvitation(inv.id) }
+            },
+            onDecline: {
+              Task { await declineWordSetInvitation(inv.id) }
+            }
+          )
+        }
+      }
+      .background(Color(.secondarySystemGroupedBackground))
+      .cornerRadius(12)
+    }
+  }
+
+  private func loadWordSetInvitations() async {
+    guard let uid = authService.currentUserId else { return }
+    wordSetInvitationsLoading = true
+    defer { wordSetInvitationsLoading = false }
+    do {
+      let service = WordSetInvitationService(authService: authService, userId: uid)
+      let list = try await service.fetchMyPendingInvitations()
+      await MainActor.run { wordSetInvitations = list }
+    } catch {
+      print("⚠️ [Community] loadWordSetInvitations 失敗: \(error)")
+    }
+  }
+
+  private func acceptWordSetInvitation(_ id: UUID) async {
+    guard let uid = authService.currentUserId else { return }
+    respondingInvitationId = id
+    do {
+      let service = WordSetInvitationService(authService: authService, userId: uid)
+      try await service.acceptInvitation(id: id)
+      await loadWordSetInvitations()
+      // 接受後立刻拉取可見單字集，讓新加入的共編單字集出現在「我的單字集」
+      if let sync = CardWordSetSyncService.createIfLoggedIn(authService: authService) {
+        await sync.pullVisibleWordSetsAndMergeToLocal(modelContext: modelContext)
+      }
+    } catch {
+      print("⚠️ [Community] acceptWordSetInvitation 失敗: \(error)")
+    }
+    respondingInvitationId = nil
+  }
+
+  private func declineWordSetInvitation(_ id: UUID) async {
+    guard let uid = authService.currentUserId else { return }
+    respondingInvitationId = id
+    do {
+      let service = WordSetInvitationService(authService: authService, userId: uid)
+      try await service.declineInvitation(id: id)
+      await loadWordSetInvitations()
+    } catch {
+      print("⚠️ [Community] declineWordSetInvitation 失敗: \(error)")
+    }
+    respondingInvitationId = nil
+  }
+
   // MARK: - 好友請求區塊
 
   private var pendingRequestsSection: some View {
@@ -312,6 +404,56 @@ private struct SearchResultRow: View {
             .cornerRadius(8)
         }
         .buttonStyle(.plain)
+      }
+    }
+    .padding(14)
+  }
+}
+
+private struct WordSetInvitationRow: View {
+  let invitation: WordSetInvitationItem
+  let isResponding: Bool
+  let onAccept: () -> Void
+  let onDecline: () -> Void
+
+  var body: some View {
+    HStack(spacing: 16) {
+      Image(systemName: "book.closed.fill")
+        .font(.system(size: 28))
+        .foregroundStyle(.orange)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(invitation.wordSetTitle)
+          .font(.system(size: 16, weight: .medium))
+          .foregroundStyle(.primary)
+        Text("\(invitation.inviterDisplayName) 邀請你共編此單字集")
+          .font(.system(size: 13))
+          .foregroundStyle(.secondary)
+      }
+      Spacer()
+      HStack(spacing: 8) {
+        Button(action: onDecline) {
+          Text("拒絕")
+            .font(.system(size: 14, weight: .medium))
+            .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        .disabled(isResponding)
+        Button(action: onAccept) {
+          if isResponding {
+            ProgressView()
+              .scaleEffect(0.8)
+          } else {
+            Text("接受")
+              .font(.system(size: 14, weight: .medium))
+              .foregroundStyle(.white)
+              .padding(.horizontal, 14)
+              .padding(.vertical, 8)
+              .background(Color.blue)
+              .cornerRadius(8)
+          }
+        }
+        .buttonStyle(.plain)
+        .disabled(isResponding)
       }
     }
     .padding(14)

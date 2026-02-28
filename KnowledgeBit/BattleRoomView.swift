@@ -4,14 +4,28 @@
 import SwiftUI
 
 struct BattleRoomView: View {
+  let roomId: UUID
   let wordSetID: UUID
   let wordSetTitle: String
   let startDate: Date
   let durationDays: Int
   let invitedMemberIDs: [UUID]
+  /// 創辦人 = 藍隊；被邀請成員 = 紅隊。nil 時視為目前使用者為創辦人（藍隊）。
+  let creatorId: UUID?
 
   @State private var now: Date = Date()
   @State private var timer: Timer? = nil
+  @EnvironmentObject private var energyStore: BattleEnergyStore
+  @EnvironmentObject private var authService: AuthService
+
+  /// 目前使用者是否為藍隊（創辦人）
+  private var isBlueTeam: Bool {
+    guard let cid = creatorId, let me = authService.currentUserId else { return true }
+    return me == cid
+  }
+
+  private var teamLabel: String { isBlueTeam ? "藍隊" : "紅隊" }
+  private var teamColor: Color { isBlueTeam ? Color.blue : Color.red }
 
   private var totalSeconds: TimeInterval { TimeInterval(max(1, durationDays)) * 24 * 3600 }
   private var battleStartDate: Date { startDate.addingTimeInterval(totalSeconds * 0.75) }
@@ -26,6 +40,22 @@ struct BattleRoomView: View {
 
       statusCard
 
+      // ⚠️ 測試用：無視時間，直接進入戰鬥盤面（之後正式開發可移除）
+      NavigationLink {
+        StrategicBattleView(roomId: roomId, wordSetID: wordSetID, creatorId: creatorId, wordSetTitle: wordSetTitle)
+      } label: {
+        HStack {
+          Image(systemName: "hammer.fill")
+          Text("（測試）直接進入戰鬥盤面")
+            .fontWeight(.semibold)
+        }
+        .frame(maxWidth: .infinity)
+        .padding()
+        .background(Color.orange.opacity(0.15))
+        .foregroundStyle(.orange)
+        .cornerRadius(12)
+      }
+
       Spacer(minLength: 0)
 
       if isFinished {
@@ -39,7 +69,7 @@ struct BattleRoomView: View {
             .foregroundStyle(.red)
 
           NavigationLink {
-            StrategicBattleView(wordSetID: wordSetID, wordSetTitle: wordSetTitle)
+            StrategicBattleView(roomId: roomId, wordSetID: wordSetID, creatorId: creatorId, wordSetTitle: wordSetTitle)
           } label: {
             HStack {
               Image(systemName: "swords")
@@ -56,7 +86,7 @@ struct BattleRoomView: View {
         }
         .padding()
       } else {
-        VStack(spacing: 10) {
+        VStack(spacing: 12) {
           Text("目前為準備期")
             .font(.headline)
           Text("對戰將在最後 1/4 期間開放")
@@ -65,6 +95,32 @@ struct BattleRoomView: View {
           Text("距離開戰：\(formatTimeInterval(battleStartDate.timeIntervalSince(now)))")
             .font(.title3.monospacedDigit())
             .padding(.top, 4)
+
+          VStack(alignment: .leading, spacing: 8) {
+            Text("準備期測驗")
+              .font(.subheadline.weight(.semibold))
+            Text("透過選擇題測驗賺取 KE，之後在正式對戰中可用來佔領格子。")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+
+            NavigationLink {
+              BattlePrepQuizView(wordSetID: wordSetID, roomId: roomId, creatorId: creatorId)
+            } label: {
+              HStack {
+                Image(systemName: "bolt.circle")
+                Text("進行準備期選擇題測驗")
+                  .fontWeight(.semibold)
+              }
+              .frame(maxWidth: .infinity)
+              .padding()
+              .background(Color.blue.opacity(0.15))
+              .foregroundStyle(.blue)
+              .cornerRadius(12)
+            }
+          }
+          .padding()
+          .background(Color(.secondarySystemGroupedBackground))
+          .cornerRadius(12)
         }
         .padding()
       }
@@ -90,6 +146,14 @@ struct BattleRoomView: View {
   private var statusCard: some View {
     VStack(alignment: .leading, spacing: 8) {
       HStack {
+        Label("您的隊伍", systemImage: "person.2.fill")
+        Spacer()
+        Text(teamLabel)
+          .font(.subheadline.bold())
+          .foregroundStyle(teamColor)
+      }
+      Divider().padding(.vertical, 2)
+      HStack {
         Label("開始時間", systemImage: "clock")
         Spacer()
         Text(formatDate(startDate))
@@ -112,6 +176,13 @@ struct BattleRoomView: View {
         Label("已邀請成員", systemImage: "person.2")
         Spacer()
         Text("\(invitedMemberIDs.count) 位")
+      }
+      Divider().padding(.vertical, 6)
+      HStack {
+        Label("目前可用 KE", systemImage: "bolt.circle")
+        Spacer()
+        Text("\(energyStore.availableKE(for: wordSetID.uuidString))")
+          .font(.subheadline.bold())
       }
     }
     .padding()
@@ -155,11 +226,15 @@ struct BattleRoomView: View {
 #Preview {
   NavigationStack {
     BattleRoomView(
+      roomId: UUID(),
       wordSetID: UUID(),
-      wordSetTitle: "韓文第六課",
+      wordSetTitle: "英文",
       startDate: Date(),
       durationDays: 7,
-      invitedMemberIDs: [UUID(), UUID()]
+      invitedMemberIDs: [UUID(), UUID()],
+      creatorId: nil
     )
+    .environmentObject(BattleEnergyStore())
+    .environmentObject(AuthService())
   }
 }

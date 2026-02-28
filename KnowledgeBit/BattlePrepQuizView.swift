@@ -6,22 +6,27 @@ import SwiftData
 
 struct BattlePrepQuizView: View {
   let wordSetID: UUID
+  /// 若存在，完成測驗後可直接導向此對戰房間的戰略盤面
+  let roomId: UUID?
+  /// 對戰房間創辦人（藍隊）；被邀請 = 紅隊，傳給戰鬥盤面用
+  let creatorId: UUID?
 
   @Query private var wordSets: [WordSet]
-  @StateObject private var energyStore: BattleEnergyStore
+  @EnvironmentObject private var energyStore: BattleEnergyStore
 
-  init(wordSetID: UUID) {
+  init(wordSetID: UUID, roomId: UUID? = nil, creatorId: UUID? = nil) {
     self.wordSetID = wordSetID
+    self.roomId = roomId
+    self.creatorId = creatorId
     // 設定查詢：僅抓指定 id 的單字集
     let predicate = #Predicate<WordSet> { $0.id == wordSetID }
     _wordSets = Query(filter: predicate)
-    _energyStore = StateObject(wrappedValue: BattleEnergyStore(namespace: wordSetID.uuidString))
   }
 
   var body: some View {
     Group {
       if let ws = wordSets.first {
-        MultipleChoiceQuizView(wordSet: ws)
+        MultipleChoiceQuizView(wordSet: ws, roomId: roomId, creatorId: creatorId)
           .environmentObject(energyStore)
       } else {
         VStack(spacing: 12) {

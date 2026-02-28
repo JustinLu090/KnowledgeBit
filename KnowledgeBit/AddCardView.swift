@@ -150,7 +150,11 @@ struct AddCardView: View {
         targetSet = existing
       } else {
         let setName = String(aiPrompt.prefix(30)).trimmingCharacters(in: .whitespacesAndNewlines)
-        targetSet = WordSet(title: setName.isEmpty ? "AI 單字集" : setName)
+        let ownerId = authService.currentUserId
+        targetSet = WordSet(
+          title: setName.isEmpty ? "AI 單字集" : setName,
+          ownerUserId: ownerId
+        )
         modelContext.insert(targetSet)
       }
 

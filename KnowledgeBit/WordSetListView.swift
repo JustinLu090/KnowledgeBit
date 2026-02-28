@@ -6,10 +6,15 @@ import SwiftData
 import WidgetKit
 
 struct WordSetListView: View {
-  @Query(sort: \WordSet.createdAt, order: .reverse) private var wordSets: [WordSet]
+  @Query private var wordSets: [WordSet]
   @Environment(\.modelContext) private var modelContext
   @EnvironmentObject private var authService: AuthService
   @State private var showingAddWordSetSheet = false
+
+  init(currentUserId: UUID? = nil) {
+    // 顯示所有可見單字集（自己建立的 + 被邀請共編的），sync 已只從 get_visible_word_sets 寫入
+    _wordSets = Query(sort: \WordSet.createdAt, order: .reverse)
+  }
 
   var body: some View {
     VStack(spacing: 0) {

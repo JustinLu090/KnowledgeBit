@@ -20,6 +20,9 @@ struct BattleInitiationView: View {
   @State private var isLoading = false
   @State private var errorMessage: String?
   @State private var navigateToBattle = false
+  @State private var createdSession: BattleSession?
+  private let sessionStore = BattleSessionStore()
+  @State private var selectedDuration: Int = 7
 
   var body: some View {
     List {
@@ -57,17 +60,10 @@ struct BattleInitiationView: View {
         } else {
           ForEach(members) { m in
             HStack(spacing: 12) {
-              // 簡化頭像顯示（此專案已有 AvatarView，但為避免相依，這裡使用系統圖示）
-              Image(systemName: "person.crop.circle")
-                .font(.system(size: 28))
-                .foregroundStyle(.secondary)
-              VStack(alignment: .leading, spacing: 2) {
-                Text(m.displayName)
-                  .font(.body)
-                Text(m.id.uuidString.prefix(8) + "…")
-                  .font(.caption)
-                  .foregroundStyle(.tertiary)
-              }
+              AvatarView(avatarURL: m.avatarURL, size: 44)
+                .clipShape(Circle())
+              Text(m.displayName)
+                .font(.body)
               Spacer()
               Toggle("邀請", isOn: Binding(
                 get: { invited.contains(m.id) },
@@ -85,6 +81,27 @@ struct BattleInitiationView: View {
         }
       }
 
+      Section(header: Text("對戰時長")) {
+        VStack(alignment: .leading, spacing: 10) {
+          Stepper(value: $selectedDuration, in: 1...30) {
+            HStack(spacing: 8) {
+              Image(systemName: "clock")
+                .foregroundColor(.blue)
+              Text("持續")
+              Text("\(selectedDuration) 天")
+                .bold()
+                .foregroundColor(.blue)
+            }
+          }
+          Text("至少 1 天，最多 30 天。發起後將固定此場次的對戰期間。")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+      }
+
       if !members.isEmpty {
         Section(header: Text("準備")) {
           Text("已選擇：\(invited.count) 位成員")
@@ -97,7 +114,7 @@ struct BattleInitiationView: View {
     .toolbar {
       ToolbarItem(placement: .primaryAction) {
         Button {
-          navigateToBattle = true
+          Task { await startBattle() }
         } label: {
           Text("開始戰鬥")
             .fontWeight(.bold)
@@ -105,46 +122,90 @@ struct BattleInitiationView: View {
         .disabled(isLoading || invited.isEmpty)
       }
     }
-    .background(
-      NavigationLink(
-        destination: StrategicBattleView(wordSetID: wordSetID, wordSetTitle: wordSetTitle),
-        isActive: $navigateToBattle,
-        label: { EmptyView() }
-      )
-      .hidden()
-    )
+    .navigationDestination(isPresented: $navigateToBattle) {
+      if let session = createdSession {
+        BattleRoomView(
+          roomId: session.roomId,
+          wordSetID: session.wordSetID,
+          wordSetTitle: wordSetTitle,
+          startDate: session.startDate,
+          durationDays: session.durationDays,
+          invitedMemberIDs: session.invitedMemberIDs,
+          creatorId: session.creatorId ?? authService.currentUserId
+        )
+      }
+    }
     .onAppear { loadCollaborators() }
   }
 
-  // 載入共編成員（占位實作）
+  private func startBattle() async {
+    guard let userId = authService.currentUserId else {
+      errorMessage = "請先登入"
+      return
+    }
+    isLoading = true
+    errorMessage = nil
+    defer { isLoading = false }
+    do {
+      let service = BattleRoomService(authService: authService, userId: userId)
+      let startDate = Date()
+      let roomId = try await service.createRoom(
+        wordSetID: wordSetID,
+        startDate: startDate,
+        durationDays: selectedDuration,
+        invitedMemberIDs: Array(invited)
+      )
+      let session = BattleSession(
+        roomId: roomId,
+        wordSetID: wordSetID,
+        startDate: startDate,
+        durationDays: selectedDuration,
+        invitedMemberIDs: Array(invited),
+        creatorId: userId
+      )
+      sessionStore.save(session)
+      createdSession = session
+      navigateToBattle = true
+    } catch {
+      errorMessage = error.localizedDescription
+    }
+  }
+
   private func loadCollaborators() {
     isLoading = true
     errorMessage = nil
     members = []
     invited = []
 
-    // TODO: 之後可整合實際的共編 API；這裡先用簡單的 mock，確保畫面流程可用
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-      // 若未登入，顯示空列表即可
-      guard authService.isLoggedIn else {
-        isLoading = false
+    Task {
+      guard let currentUserId = authService.currentUserId else {
+        await MainActor.run { isLoading = false }
         return
       }
-      // 模擬 3 位共編成員（不含自己）
-      let mock: [Member] = [
-        Member(id: UUID(), displayName: "Alice", avatarURL: nil),
-        Member(id: UUID(), displayName: "Bob", avatarURL: nil),
-        Member(id: UUID(), displayName: "Charlie", avatarURL: nil)
-      ]
-      members = mock
-      isLoading = false
+      let service = WordSetCollaboratorService(authService: authService, userId: currentUserId)
+      do {
+        let collabs = try await service.fetchCollaborators(wordSetId: wordSetID)
+        await MainActor.run {
+          // 不顯示自己（發起人一定會帶入），只顯示此共編單字集的其他成員
+          members = collabs
+            .filter { $0.userId != currentUserId }
+            .map { Member(id: $0.userId, displayName: $0.displayName, avatarURL: $0.avatarURL) }
+          isLoading = false
+        }
+      } catch {
+        await MainActor.run {
+          errorMessage = "無法載入共編成員"
+          isLoading = false
+        }
+        print("⚠️ [BattleInitiation] fetchCollaborators 失敗: \(error)")
+      }
     }
   }
 }
 
 #Preview {
   NavigationStack {
-    BattleInitiationView(wordSetID: UUID(), wordSetTitle: "韓文第六課")
+    BattleInitiationView(wordSetID: UUID(), wordSetTitle: "英文")
       .environmentObject(AuthService())
   }
 }

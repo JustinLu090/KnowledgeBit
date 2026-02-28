@@ -3,34 +3,166 @@
 import SwiftUI
 
 struct StrategicBattleView: View {
-  @StateObject private var vm = StrategicBattleViewModel()
+  let roomId: UUID
+  let wordSetID: UUID
+  /// 創辦人 = 藍隊；被邀請 = 紅隊。nil 時視為己方藍隊。
+  let creatorId: UUID?
+  /// 單字集標題，供 Widget 對戰地圖快照顯示用。
+  let wordSetTitle: String?
+  @EnvironmentObject private var authService: AuthService
+  @EnvironmentObject private var energyStore: BattleEnergyStore
 
-  private let gridSize: CGFloat = 360
-  private let gridPadding: CGFloat = 16
-
-  private let playerTeamColor: Color = .blue
-  private let enemyTeamColor: Color = .red
-  private let neutralColor: Color = Color.black.opacity(0.35)
+  init(roomId: UUID, wordSetID: UUID, creatorId: UUID? = nil, wordSetTitle: String? = nil) {
+    self.roomId = roomId
+    self.wordSetID = wordSetID
+    self.creatorId = creatorId
+    self.wordSetTitle = wordSetTitle
+  }
 
   var body: some View {
-    NavigationStack {
-      VStack(spacing: 14) {
-        gridArea
-          .padding(.horizontal, gridPadding)
-
-        Spacer(minLength: 0)
-
-        bottomSheet
+    let namespace = wordSetID.uuidString
+    StrategicBattleViewContent(
+      roomId: roomId,
+      wordSetID: wordSetID,
+      wordSetTitle: wordSetTitle,
+      authService: authService,
+      initialKE: energyStore.availableKE(for: namespace),
+      creatorId: creatorId,
+      namespace: namespace,
+      onConsumeKE: { amount in
+        _ = energyStore.spendKE(amount, namespace: namespace)
       }
+    )
+  }
+}
+
+private struct StrategicBattleViewContent: View {
+  let roomId: UUID
+  let wordSetID: UUID
+  let wordSetTitle: String?
+  let authService: AuthService
+  let initialKE: Int
+  let creatorId: UUID?
+  let namespace: String
+  let onConsumeKE: (Int) -> Void
+  @StateObject private var vm: StrategicBattleViewModel
+
+  /// 地圖最大邊長（放大地圖時可提高）
+  private let gridMaxSide: CGFloat = 480
+  /// 左右留白縮小，讓地圖貼齊兩側
+  private let gridPadding: CGFloat = 8
+
+  private let neutralColor: Color = Color.black.opacity(0.35)
+
+  /// 己方隊伍顏色（創辦人=藍、被邀請=紅）
+  private var playerTeamColor: Color {
+    isRedTeam ? .red : .blue
+  }
+
+  /// 對方隊伍顏色
+  private var enemyTeamColor: Color {
+    isRedTeam ? .blue : .red
+  }
+
+  private var isRedTeam: Bool {
+    guard let cid = creatorId, let me = authService.currentUserId else { return false }
+    return me != cid
+  }
+
+  init(
+    roomId: UUID,
+    wordSetID: UUID,
+    wordSetTitle: String?,
+    authService: AuthService,
+    initialKE: Int,
+    creatorId: UUID? = nil,
+    namespace: String,
+    onConsumeKE: @escaping (Int) -> Void
+  ) {
+    self.roomId = roomId
+    self.wordSetID = wordSetID
+    self.wordSetTitle = wordSetTitle
+    self.authService = authService
+    self.initialKE = initialKE
+    self.creatorId = creatorId
+    self.namespace = namespace
+    self.onConsumeKE = onConsumeKE
+    #if DEBUG
+    let bucketSeconds = 120
+    #else
+    let bucketSeconds = 3600
+    #endif
+    _vm = StateObject(
+      wrappedValue: StrategicBattleViewModel(
+        roomId: roomId,
+        authService: authService,
+        initialKE: initialKE,
+        settlementBucketSeconds: bucketSeconds,
+        onConsumedKE: onConsumeKE
+      )
+    )
+  }
+
+  var body: some View {
+    content
+      .onAppear { Task { await vm.loadInitialBoard() } }
+      .onChange(of: vm.cells) { _, newCells in
+        if newCells.count == 16, let me = authService.currentUserId {
+          let snapshots = newCells.map { cell in
+            WidgetBattleCellSnapshot(
+              id: cell.id,
+              owner: cell.owner.rawValue,
+              hp_now: cell.hpNow,
+              hp_max: cell.hpMax
+            )
+          }
+          WidgetBattleSnapshot.save(
+            roomId: roomId,
+            wordSetId: wordSetID,
+            wordSetTitle: wordSetTitle,
+            creatorId: creatorId,
+            currentUserId: me,
+            cells: snapshots
+          )
+        }
+      }
+      .alert("格子上限 400", isPresented: Binding(
+        get: { vm.cellCapAlertMessage != nil },
+        set: { if !$0 { vm.cellCapAlertMessage = nil } }
+      )) {
+        Button("確定", role: .cancel) { vm.cellCapAlertMessage = nil }
+      } message: {
+        Text(vm.cellCapAlertMessage ?? "")
+      }
+  }
+
+  private var content: some View {
+    NavigationStack {
+      ScrollView(.vertical, showsIndicators: true) {
+        VStack(spacing: 14) {
+          // 頂部狀態區，放在安全區域內，避免被瀏海或導航列擋住
+          statusHeader
+            .padding(.horizontal, 12)
+            .padding(.top, 8)
+
+          gridArea
+            .padding(.horizontal, gridPadding)
+
+          // 上一輪統整：固定顯示在地圖與底部操作區之間，不隨選格切換消失
+          if let summary = vm.lastRoundSummary {
+            roundSummarySection(summary)
+              .padding(.horizontal, 12)
+          }
+
+          bottomSheet
+            .padding(.top, 8)
+        }
+        .padding(.bottom, 24)
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
       .background(Color(.systemGroupedBackground))
       .navigationTitle("對戰")
       .navigationBarTitleDisplayMode(.inline)
-      .safeAreaInset(edge: .top, spacing: 0) {
-        statusHeader
-          .padding(.horizontal, 16)
-          .padding(.top, 8)
-          .padding(.bottom, 10)
-      }
       .overlay(lockOverlay)
     }
   }
@@ -68,7 +200,7 @@ struct StrategicBattleView: View {
 
   private var timerChip: some View {
     HStack(spacing: 8) {
-      Text("距整點結算")
+      Text("距離結算")
         .font(.system(size: 12, weight: .semibold))
         .foregroundStyle(.secondary)
       Text(formatMMSS(vm.secondsToTopOfHour))
@@ -101,7 +233,7 @@ struct StrategicBattleView: View {
 
   private var gridArea: some View {
     GeometryReader { geo in
-      let side = min(geo.size.width, geo.size.height, gridSize)
+      let side = min(geo.size.width, geo.size.height, gridMaxSide)
       let cellGap: CGFloat = 10
       let cellSide = (side - cellGap * 3) / 4
 
@@ -123,12 +255,12 @@ struct StrategicBattleView: View {
               .disabled(vm.isSettlementLocked)
           }
         }
-        .padding(14)
+        .padding(10)
       }
       .frame(width: side, height: side)
       .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
-    .frame(height: min(gridSize, 420))
+    .frame(minHeight: 360, maxHeight: gridMaxSide + 40)
   }
 
   private func cellView(id: Int, size: CGFloat) -> some View {
@@ -224,6 +356,51 @@ struct StrategicBattleView: View {
     .padding(.bottom, 16)
   }
 
+  /// 上一輪統整：雙方在各格做了什麼
+  private func roundSummarySection(_ summary: BattleRoundSummary) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text("上一輪統整")
+        .font(.system(size: 16, weight: .bold, design: .rounded))
+
+      if !summary.blueAllocations.isEmpty {
+        HStack(alignment: .top, spacing: 6) {
+          Text("藍隊")
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundColor(.blue)
+          Text(formatTeamAllocations(summary.blueAllocations))
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(.secondary)
+        }
+      }
+      if !summary.redAllocations.isEmpty {
+        HStack(alignment: .top, spacing: 6) {
+          Text("紅隊")
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundColor(.red)
+          Text(formatTeamAllocations(summary.redAllocations))
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(.secondary)
+        }
+      }
+      if summary.blueAllocations.isEmpty && summary.redAllocations.isEmpty {
+        Text("雙方皆未投入 KE")
+          .font(.system(size: 13, weight: .medium))
+          .foregroundStyle(.secondary)
+      }
+    }
+    .padding(.vertical, 10)
+    .padding(.horizontal, 12)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+  }
+
+  /// 例：「格子 #1 投入 100 KE、#5 投入 50 KE」
+  private func formatTeamAllocations(_ allocations: [Int: Int]) -> String {
+    allocations.sorted(by: { $0.key < $1.key })
+      .map { "格子 #\($0.key + 1) 投入 \($0.value) KE" }
+      .joined(separator: "、")
+  }
+
   private func selectedPanel(cellID: Int) -> some View {
     let cell = vm.cell(for: cellID)
     let pending = vm.pendingValue(for: cellID)
@@ -231,7 +408,9 @@ struct StrategicBattleView: View {
 
     let actionTitle = isOwn ? "加固" : "進攻"
     let actionColor = isOwn ? playerTeamColor : enemyTeamColor
-    let maxSlider = max(0, vm.remainingKE + pending)
+    // 加固時：投入 KE 不得讓 HP 超過 400（上限 = 400 - hpNow）；進攻時：單格上限 400
+    let cellCap = vm.maxAllowedKE(for: cellID)
+    let maxSlider = min(cellCap, max(0, vm.remainingKE + pending))
 
     let canCommit: Bool = {
       if vm.isSettlementLocked { return false }
@@ -242,7 +421,7 @@ struct StrategicBattleView: View {
 
     return VStack(alignment: .leading, spacing: 12) {
       HStack {
-        Text("格子 #\(cellID + 1)")
+        Text("格子 #\(cellDisplayNumber(cellID))")
           .font(.system(size: 16, weight: .bold, design: .rounded))
 
         Spacer()
@@ -288,7 +467,7 @@ struct StrategicBattleView: View {
             get: { Double(pending) },
             set: { vm.updatePendingKE(for: cellID, to: Int($0.rounded())) }
           ),
-          in: 0...Double(maxSlider),
+          in: 0...Double(max(maxSlider, 1)),
           step: 1
         )
         .disabled(vm.isSettlementLocked || maxSlider == 0)
@@ -329,6 +508,11 @@ struct StrategicBattleView: View {
     }
     let attackables = (0..<16).filter { vm.isAttackableTarget($0) }.count
     return "可進攻目標：\(attackables) 格。點選白色虛線邊框的格子進行進攻，或點選己方格子加固。"
+  }
+
+  /// 格子顯示編號：左上角(紅隊出發) = #1，右下角(藍隊出發) = #16；grid index 0..<16 對應 #1..#16
+  private func cellDisplayNumber(_ gridIndex: Int) -> Int {
+    gridIndex + 1
   }
 
   private func autoAllocateSuggestion() {

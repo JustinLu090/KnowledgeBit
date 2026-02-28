@@ -37,7 +37,7 @@ final class BattleEnergyService {
         .rpc("ke_increment", params: [
           "p_user_id": userId.uuidString,
           "p_namespace": namespace,
-          "p_delta": delta
+          "p_delta": String(delta)
         ])
         .execute()
     } catch {
@@ -53,7 +53,7 @@ final class BattleEnergyService {
         .rpc("ke_spend", params: [
           "p_user_id": userId.uuidString,
           "p_namespace": namespace,
-          "p_amount": amount
+          "p_amount": String(amount)
         ])
         .execute()
     } catch {

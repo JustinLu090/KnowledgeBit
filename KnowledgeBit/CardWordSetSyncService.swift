@@ -143,4 +143,82 @@ final class CardWordSetSyncService {
       print("⚠️ [Sync] cards delete by word_set_id 失敗: \(error.localizedDescription)")
     }
   }
+
+  // MARK: - 從 Supabase 拉取可見單字集並寫入本機（擁有 + 共編）
+
+  /// 從 Supabase 拉取該單字集內所有卡片（擁有者與共編者皆可讀），若本機尚無則建立一筆並關聯到 wordSet。
+  /// 共編時一方新增單字卡後，另一方進入此單字集時呼叫即可看到最新卡片。
+  func pullCardsForWordSet(wordSet: WordSet, modelContext: ModelContext) async {
+    struct RemoteCard: Decodable {
+      let id: UUID
+      let title: String
+      let content: String
+      let is_mastered: Bool
+      let srs_level: Int
+      let due_at: Date
+      let last_reviewed_at: Date?
+      let correct_streak: Int
+      let created_at: Date
+    }
+    do {
+      let rows: [RemoteCard] = try await client
+        .rpc("get_cards_for_word_set", params: ["p_word_set_id": wordSet.id.uuidString])
+        .execute()
+        .value
+
+      let existingIds = Set(wordSet.cards.map(\.id))
+      for row in rows where !existingIds.contains(row.id) {
+        let card = Card(title: row.title, content: row.content, wordSet: wordSet)
+        card.id = row.id
+        card.createdAt = row.created_at
+        card.isMastered = row.is_mastered
+        card.srsLevel = row.srs_level
+        card.dueAt = row.due_at
+        card.lastReviewedAt = row.last_reviewed_at
+        card.correctStreak = row.correct_streak
+        modelContext.insert(card)
+      }
+      try? modelContext.save()
+    } catch {
+      print("⚠️ [Sync] pullCardsForWordSet 失敗: \(error.localizedDescription)")
+    }
+  }
+
+  /// 取得目前使用者可見的 word_sets（擁有者或共編者），若本機尚無則建立一筆，供「我的單字集」列表顯示。
+  /// 接受邀請後呼叫此方法可讓新單字集立即出現在列表中。
+  func pullVisibleWordSetsAndMergeToLocal(modelContext: ModelContext) async {
+    struct RemoteWordSet: Decodable {
+      let id: UUID
+      let user_id: UUID
+      let title: String
+      let level: String?
+      let created_at: Date
+    }
+    do {
+      let rows: [RemoteWordSet] = try await client
+        .rpc("get_visible_word_sets")
+        .execute()
+        .value
+
+      let existingAll = (try? modelContext.fetch(FetchDescriptor<WordSet>())) ?? []
+      for row in rows {
+        if let existing = existingAll.first(where: { $0.id == row.id }) {
+          // 更新本機紀錄的真正擁有者（word_sets.user_id），以便之後區分「創辦人」與「共編者」
+          existing.ownerUserId = row.user_id
+        } else {
+          let local = WordSet(
+            id: row.id,
+            title: row.title,
+            level: row.level,
+            createdAt: row.created_at,
+            ownerUserId: row.user_id
+          )
+          modelContext.insert(local)
+        }
+      }
+      try? modelContext.save()
+    } catch {
+      print("⚠️ [Sync] pullVisibleWordSetsAndMergeToLocal 失敗: \(error.localizedDescription)")
+    }
+  }
 }

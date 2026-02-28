@@ -7,6 +7,16 @@ struct MultipleChoiceQuizView: View {
   @Environment(\.dismiss) private var dismiss
   @EnvironmentObject var energyStore: BattleEnergyStore
   let wordSet: WordSet
+  /// 若提供，測驗結束後可直接導向此對戰房間的戰略盤面
+  let roomId: UUID?
+  /// 對戰房間創辦人（藍隊）；傳給 StrategicBattleView 以顯示正確己方顏色
+  let creatorId: UUID?
+
+  init(wordSet: WordSet, roomId: UUID? = nil, creatorId: UUID? = nil) {
+    self.wordSet = wordSet
+    self.roomId = roomId
+    self.creatorId = creatorId
+  }
 
   @State private var questions: [Question] = []
   @State private var currentIndex: Int = 0
@@ -15,12 +25,15 @@ struct MultipleChoiceQuizView: View {
   @State private var totalKE: Int = 0
   @State private var perQuestionScores: [Int] = []
   @State private var isFinished: Bool = false
+  @State private var loadError: String? = nil
+  @State private var hasCommittedKE: Bool = false
 
+  /// 一題：顯示「定義」，選項是同一單字集裡的多個單字（title）。
   struct Question: Identifiable, Equatable {
     let id = UUID()
-    let prompt: String
-    let correct: String
-    let choices: [String]
+    let prompt: String        // 題目：定義句
+    let correct: String       // 正確單字（title）
+    let choices: [String]     // 選項：多個 title
   }
 
   var body: some View {
@@ -28,6 +41,16 @@ struct MultipleChoiceQuizView: View {
       VStack(spacing: 20) {
         if isFinished {
           summaryView
+        } else if let err = loadError {
+          VStack(spacing: 12) {
+            Text("無法產生題目")
+              .font(.headline)
+            Text(err)
+              .font(.subheadline)
+              .foregroundStyle(.secondary)
+              .multilineTextAlignment(.center)
+          }
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if currentIndex < questions.count {
           quizCard(questions[currentIndex])
         } else {
@@ -46,23 +69,63 @@ struct MultipleChoiceQuizView: View {
     }
   }
 
+  // MARK: - 題目產生
+
   private func setupQuestions() {
     let cards = wordSet.cards
-    guard !cards.isEmpty else { return }
-
-    // 以卡片內容組題：顯示 title，選 content
-    var qs: [Question] = []
-    let allContents = cards.map { $0.content }
-
-    for card in cards.shuffled() {
-      let correct = card.content
-      var pool = Array(allContents.shuffled().prefix(8))
-      if !pool.contains(correct) { pool.append(correct) }
-      let unique = Array(Set(pool)).shuffled()
-      let choices = Array(unique.prefix(4)).shuffled()
-      qs.append(Question(prompt: card.title, correct: correct, choices: choices))
+    guard !cards.isEmpty else {
+      loadError = "此單字集目前沒有單字可出題。"
+      return
     }
 
+    // 先為每張卡片抽出「定義句」與單字本身（title）
+    let entries: [(card: Card, term: String, definition: String)] = cards.compactMap { card in
+      let def = definitionLine(from: card.content)
+      let term = card.title.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !term.isEmpty, !def.isEmpty else { return nil }
+      return (card, term, def)
+    }
+
+    // 至少 2 個單字，才有辦法產生「正確 + 錯誤」選項
+    guard entries.count >= 2 else {
+      loadError = "此單字集目前只有 1 個有定義的單字，無法產生選擇題。請為更多單字填寫「定義」。"
+      return
+    }
+
+    var qs: [Question] = []
+
+    // 最多出 10 題
+    let picked = Array(entries.shuffled().prefix(10))
+
+    for entry in picked {
+      let correctTerm = entry.term
+      let definition = entry.definition
+
+      // 從其他卡片抽出錯誤選項（其他單字）
+      let others = entries
+        .filter { $0.card.id != entry.card.id }
+        .map { $0.term }
+      guard !others.isEmpty else { continue }
+
+      let wrongs = Array(others.shuffled().prefix(3))
+      let choices = ([correctTerm] + wrongs).shuffled()
+
+      qs.append(
+        Question(
+          prompt: definition,
+          correct: correctTerm,
+          choices: choices
+        )
+      )
+    }
+
+    guard !qs.isEmpty else {
+      loadError = "目前無法從此單字集產生足夠的選擇題。請確認每個單字都有清楚的定義內容。"
+      questions = []
+      return
+    }
+
+    loadError = nil
     questions = qs
     perQuestionScores = Array(repeating: 0, count: qs.count)
     currentIndex = 0
@@ -71,6 +134,8 @@ struct MultipleChoiceQuizView: View {
     lastStartTime = Date()
   }
 
+  // MARK: - 單題 UI
+
   @ViewBuilder
   private func quizCard(_ q: Question) -> some View {
     VStack(alignment: .leading, spacing: 16) {
@@ -78,18 +143,29 @@ struct MultipleChoiceQuizView: View {
         .font(.system(size: 14, weight: .semibold))
         .foregroundStyle(.secondary)
 
-      Text(q.prompt)
-        .font(.title3.bold())
-        .frame(maxWidth: .infinity, alignment: .leading)
+      VStack(alignment: .leading, spacing: 6) {
+        Text("依照下列定義選出正確單字：")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+        Text(q.prompt)
+          .font(.title3.bold())
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
 
       ForEach(q.choices, id: \.self) { choice in
         Button {
           handleAnswer(choice: choice, for: q)
         } label: {
-          HStack { Text(choice).frame(maxWidth: .infinity, alignment: .leading) }
-            .padding(14)
-            .background(Color(.secondarySystemGroupedBackground))
-            .cornerRadius(12)
+          HStack {
+            Text(choice)
+              .font(.body)
+              .lineLimit(2)
+              .multilineTextAlignment(.leading)
+              .frame(maxWidth: .infinity, alignment: .leading)
+          }
+          .padding(14)
+          .background(Color(.secondarySystemGroupedBackground))
+          .cornerRadius(12)
         }
         .buttonStyle(.plain)
       }
@@ -97,6 +173,8 @@ struct MultipleChoiceQuizView: View {
       Spacer(minLength: 0)
     }
   }
+
+  // MARK: - 流程與結算
 
   private func handleAnswer(choice: String, for q: Question) {
     let elapsed = Date().timeIntervalSince(lastStartTime)
@@ -117,6 +195,7 @@ struct MultipleChoiceQuizView: View {
 
   private func finishQuiz() {
     isFinished = true
+    commitKEIfNeeded()
   }
 
   private var summaryView: some View {
@@ -128,8 +207,7 @@ struct MultipleChoiceQuizView: View {
 
       HStack(spacing: 12) {
         Button {
-          // 將分數寫入 KE 倉儲
-          energyStore.addKE(totalKE)
+          commitKEIfNeeded()
           dismiss()
         } label: {
           Text("存入 KE 並返回")
@@ -140,24 +218,29 @@ struct MultipleChoiceQuizView: View {
         }
         .buttonStyle(.plain)
 
-        NavigationLink {
-          BattleView()
-        } label: {
-          Text("前往對戰模式")
-            .font(.system(size: 16, weight: .bold))
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(Color.green.opacity(0.15), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        if let roomId = roomId {
+          NavigationLink {
+            StrategicBattleView(roomId: roomId, wordSetID: wordSet.id, creatorId: creatorId, wordSetTitle: wordSet.title)
+          } label: {
+            Text("前往對戰模式")
+              .font(.system(size: 16, weight: .bold))
+              .frame(maxWidth: .infinity)
+              .padding(.vertical, 12)
+              .background(Color.green.opacity(0.15), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+          }
+          .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
       }
 
       Button("再測一次") {
+        commitKEIfNeeded()
         setupQuestions()
       }
       .padding(.top, 4)
     }
   }
+
+  // MARK: - 計分規則
 
   private func scoreForQuestion(correct: Bool, elapsed: Double) -> Int {
     guard correct else { return 0 }
@@ -173,4 +256,42 @@ struct MultipleChoiceQuizView: View {
     }
     return base + bonus
   }
+
+  // MARK: - 內容解析：從卡片背面抓出「定義」那一句
+  // MARK: - KE commit helper
+
+  private func commitKEIfNeeded() {
+    guard !hasCommittedKE, totalKE > 0 else { return }
+    energyStore.addKE(totalKE, namespace: wordSet.id.uuidString)
+    hasCommittedKE = true
+  }
+
+  /// 從卡片內容擷取一個較短的定義句：
+  /// 優先使用「定義」這一行的下一行，否則退回到第一個非空、且不是「定義/例句」等標題的行。
+  private func definitionLine(from content: String) -> String {
+    let normalized = content
+      .replacingOccurrences(of: "\r", with: "")
+      .components(separatedBy: "\n")
+
+    let set = CharacterSet.whitespacesAndNewlines
+
+    // 嘗試找到標題為「定義」的行，取其下一個非空行作為定義
+    if let defIndex = normalized.firstIndex(where: { $0.trimmingCharacters(in: set) == "定義" }) {
+      let nextSlice = normalized.suffix(from: normalized.index(after: defIndex))
+      if let line = nextSlice.first(where: { !$0.trimmingCharacters(in: set).isEmpty }) {
+        return line.trimmingCharacters(in: set)
+      }
+    }
+
+    // 否則 fallback：取第一個非空、且不是「定義」/「例句」這類標題的行
+    if let first = normalized.first(where: {
+      let trimmed = $0.trimmingCharacters(in: set)
+      return !trimmed.isEmpty && trimmed != "定義" && trimmed != "例句"
+    }) {
+      return first.trimmingCharacters(in: set)
+    }
+
+    return ""
+  }
 }
+

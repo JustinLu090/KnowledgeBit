@@ -19,7 +19,7 @@ struct AddWordSetView: View {
     NavigationStack {
       Form {
         Section(header: Text("基本資訊")) {
-          TextField("標題（例如：韓文第六課）", text: $title)
+          TextField("標題（例如：英文）", text: $title)
 
           Picker("等級", selection: $selectedLevel) {
             Text("無").tag(nil as String?)
@@ -37,9 +37,11 @@ struct AddWordSetView: View {
         }
         ToolbarItem(placement: .confirmationAction) {
           Button("儲存") {
+            guard let ownerId = authService.currentUserId else { return }
             let newWordSet = WordSet(
               title: title,
-              level: selectedLevel
+              level: selectedLevel,
+              ownerUserId: ownerId
             )
             modelContext.insert(newWordSet)
 

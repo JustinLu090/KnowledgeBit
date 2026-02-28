@@ -9,6 +9,7 @@ struct MainTabView: View {
   @EnvironmentObject var authService: AuthService
   @EnvironmentObject var dailyQuestService: DailyQuestService
   @EnvironmentObject var pendingInviteStore: PendingInviteStore
+  @EnvironmentObject var pendingBattleOpenStore: PendingBattleOpenStore
   @StateObject private var communityViewModel = CommunityViewModel()
   @State private var selectedTab = 0
   
@@ -67,6 +68,9 @@ struct MainTabView: View {
         .tag(4)
     }
     .tint(.blue)
+    .onChange(of: pendingBattleOpenStore.wordSetIdToOpen) { _, new in
+      if new != nil { selectedTab = 1 }
+    }
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
       // App 回到前景時將昨日 EXP/學習時長寫入 DailyStats（若已跨日）
       StatisticsManager.shared.flushYesterdayIfNeeded(modelContext: modelContext, dailyQuestService: dailyQuestService)

@@ -63,13 +63,10 @@ struct PremiumCardRowView: View {
   }
 
   private var shortAnswerPreview: String {
-    let s = card.shortAnswer.trimmingCharacters(in: .whitespacesAndNewlines)
-    if !s.isEmpty { return s }
-
-    // fallback to first non-empty line of detailed content
+    let set = CharacterSet.whitespacesAndNewlines
     let lines = card.content.replacingOccurrences(of: "\r", with: "").components(separatedBy: "\n")
-    let first = lines.first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) ?? ""
-    let cleaned = first.trimmingCharacters(in: .whitespacesAndNewlines)
+    let first = lines.first(where: { !$0.trimmingCharacters(in: set).isEmpty }) ?? ""
+    let cleaned = first.trimmingCharacters(in: set)
     return cleaned.isEmpty ? "（尚未填寫簡答）" : cleaned
   }
 }

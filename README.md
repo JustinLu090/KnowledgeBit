@@ -9,7 +9,7 @@ KnowledgeBit is a flashcard learning tool designed for the modern "fragmented ti
 
 * **Interactive iOS 17+ Widget**: Tap left/right arrows directly on the home screen to navigate through cards without opening the app. Widget intelligently selects up to 5 random cards and rotates through them automatically every 15 minutes.
 
-* **Word Set Organization**: Organize flashcards into custom word sets (e.g., "韓文第六課", "CS – File System"). Each card belongs to a word set, making it easy to focus on specific topics or subjects.
+* **Word Set Organization**: Organize flashcards into custom word sets (e.g., "英文", "CS – File System"). Each card belongs to a word set, making it easy to focus on specific topics or subjects.
 
 * **Interactive Flip-Card Quiz**: Simulates a real flashcard experience with 3D flip animations to test memory. Quiz can be taken for all cards or filtered by a specific word set.
 
@@ -60,7 +60,7 @@ Cards are organized into `WordSet` collections, allowing users to group related 
 @Model
 final class WordSet {
     var id: UUID
-    var title: String          // e.g. "韓文第六課"
+    var title: String          // e.g. "英文"
     var level: String?         // e.g. "初級", "中級", "高級"
     var createdAt: Date
     @Relationship(deleteRule: .cascade) var cards: [Card] = []
@@ -90,7 +90,7 @@ Displays a 7-day rolling window with GitHub-style intensity levels:
 ### Creating Word Sets
 1. Tap the "+" button on the home screen
 2. Select "新增單字集"
-3. Enter a title (e.g., "韓文第六課")
+3. Enter a title (e.g., "英文")
 4. Optionally select a level (初級/中級/高級)
 
 ### Adding Cards

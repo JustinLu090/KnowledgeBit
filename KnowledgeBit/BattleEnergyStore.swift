@@ -1,39 +1,62 @@
 // BattleEnergyStore.swift
 // 集中管理 Battle 可用 KE（以 App Group UserDefaults 永續化）
 
+import Combine
 import Foundation
 import SwiftUI
 
 @MainActor
 final class BattleEnergyStore: ObservableObject {
-  @Published private(set) var availableKE: Int = 0
+  /// 每個 namespace（目前用單字集 ID 字串）對應的 KE
+  @Published private(set) var keByNamespace: [String: Int] = [:]
   private let defaults = AppGroup.sharedUserDefaults()
-  private let key = "battle_available_ke"
+  private let key = "battle_available_ke_by_namespace"
 
   init() {
-    let stored = defaults?.integer(forKey: key) ?? 0
-    availableKE = max(0, stored)
+    if
+      let data = defaults?.data(forKey: key),
+      let decoded = try? JSONDecoder().decode([String: Int].self, from: data)
+    {
+      keByNamespace = decoded
+    } else {
+      keByNamespace = [:]
+    }
   }
 
-  func addKE(_ delta: Int) {
+  /// 查詢指定 namespace 的目前 KE（沒有記錄時回傳 0）
+  func availableKE(for namespace: String) -> Int {
+    keByNamespace[namespace] ?? 0
+  }
+
+  /// 為指定 namespace 增加 KE
+  func addKE(_ delta: Int, namespace: String) {
     guard delta > 0 else { return }
-    availableKE += delta
-    defaults?.set(availableKE, forKey: key)
-    defaults?.synchronize()
+    let current = keByNamespace[namespace] ?? 0
+    keByNamespace[namespace] = current + delta
+    persist()
   }
 
   @discardableResult
-  func spendKE(_ amount: Int) -> Bool {
-    guard amount > 0, availableKE >= amount else { return false }
-    availableKE -= amount
-    defaults?.set(availableKE, forKey: key)
-    defaults?.synchronize()
+  func spendKE(_ amount: Int, namespace: String) -> Bool {
+    guard amount > 0 else { return false }
+    let current = keByNamespace[namespace] ?? 0
+    guard current >= amount else { return false }
+    keByNamespace[namespace] = current - amount
+    persist()
     return true
   }
 
-  func reset() {
-    availableKE = 0
-    defaults?.set(0, forKey: key)
-    defaults?.synchronize()
+  /// 清除某個 namespace 的 KE
+  func reset(namespace: String) {
+    keByNamespace[namespace] = 0
+    persist()
+  }
+
+  private func persist() {
+    guard let defaults else { return }
+    if let data = try? JSONEncoder().encode(keByNamespace) {
+      defaults.set(data, forKey: key)
+      defaults.synchronize()
+    }
   }
 }

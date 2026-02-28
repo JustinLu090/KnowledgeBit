@@ -57,9 +57,10 @@ struct KnowledgeBitApp: App {
       print("⚠️ [Migration] 資料庫遷移失敗，嘗試重新創建資料庫...")
       print("錯誤詳情: \(error.localizedDescription)")
       
-      // 嘗試刪除舊資料庫檔案（SwiftData 可能使用不同的檔案名稱）
+      // 嘗試刪除舊資料庫檔案（SwiftData 使用 App Group 時會放在 Library/Application Support/）
       if let groupURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: AppGroup.identifier) {
         let fileManager = FileManager.default
+        let appSupport = groupURL.appendingPathComponent("Library/Application Support", isDirectory: true)
         let possibleDBFiles = [
           "default.store",
           "default.sqlite",
@@ -69,14 +70,28 @@ struct KnowledgeBitApp: App {
         
         var deletedAny = false
         for fileName in possibleDBFiles {
-          let dbURL = groupURL.appendingPathComponent(fileName)
+          let dbURL = appSupport.appendingPathComponent(fileName)
           if fileManager.fileExists(atPath: dbURL.path) {
             do {
               try fileManager.removeItem(at: dbURL)
-              print("✅ [Migration] 已刪除: \(fileName)")
+              print("✅ [Migration] 已刪除: \(appSupport.path)/\(fileName)")
               deletedAny = true
             } catch {
               print("⚠️ [Migration] 無法刪除 \(fileName): \(error.localizedDescription)")
+            }
+          }
+        }
+        if !deletedAny {
+          for fileName in possibleDBFiles {
+            let dbURL = groupURL.appendingPathComponent(fileName)
+            if fileManager.fileExists(atPath: dbURL.path) {
+              do {
+                try fileManager.removeItem(at: dbURL)
+                print("✅ [Migration] 已刪除: \(fileName)")
+                deletedAny = true
+              } catch {
+                print("⚠️ [Migration] 無法刪除 \(fileName): \(error.localizedDescription)")
+              }
             }
           }
         }
@@ -123,6 +138,8 @@ struct KnowledgeBitApp: App {
   @StateObject private var dailyQuestService = DailyQuestService()
   @StateObject private var authService = AuthService()
   @StateObject private var pendingInviteStore = PendingInviteStore()
+  @StateObject private var pendingBattleOpenStore = PendingBattleOpenStore()
+  @StateObject private var battleEnergyStore = BattleEnergyStore()
   @Environment(\.scenePhase) private var scenePhase
 
   var body: some Scene {
@@ -135,6 +152,8 @@ struct KnowledgeBitApp: App {
             .environmentObject(dailyQuestService)
             .environmentObject(authService)
             .environmentObject(pendingInviteStore)
+            .environmentObject(pendingBattleOpenStore)
+            .environmentObject(battleEnergyStore)
             .onAppear {
               experienceStore.authService = authService
               // 延遲 0.5 秒再同步，避免 nw_connection 尚未 ready 時發出請求（race condition）
@@ -157,6 +176,10 @@ struct KnowledgeBitApp: App {
       }
       .animation(.easeInOut(duration: 0.2), value: authService.isLoggedIn)
       .onOpenURL { url in
+        if let wordSetId = Self.parseBattleURL(url) {
+          pendingBattleOpenStore.setWordSetIdToOpen(wordSetId)
+          return
+        }
         if let (code, _) = Self.parseInviteURL(url) {
           Task { @MainActor in
             if authService.isLoggedIn {
@@ -200,8 +223,17 @@ struct KnowledgeBitApp: App {
   }
 }
 
-// MARK: - 邀請連結解析（供 onOpenURL 使用）
+// MARK: - Deep Link 解析（供 onOpenURL 使用）
 private extension KnowledgeBitApp {
+  /// 解析對戰地圖 Widget 連結 knowledgebit://battle?wordSetId=XXX
+  static func parseBattleURL(_ url: URL) -> UUID? {
+    guard url.scheme?.lowercased() == "knowledgebit",
+          url.host?.lowercased() == "battle",
+          let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
+          let idStr = comps.queryItems?.first(where: { $0.name == "wordSetId" })?.value else { return nil }
+    return UUID(uuidString: idStr)
+  }
+
   /// 解析邀請連結，回傳 (invite_code, displayName 可選)。支援 https 邀請頁（與 InviteConstants.baseURL 同 host）與 knowledgebit://join/XXX
   static func parseInviteURL(_ url: URL) -> (code: String, displayName: String?)? {
     let scheme = url.scheme?.lowercased()
