@@ -402,6 +402,8 @@ private struct CollaboratorPickerView: View {
   @State private var localSelection: Set<UUID> = []
   /// 已經邀請過我的使用者 ID（pending），這些人應顯示為「已加入」且不可再邀請
   @State private var pendingInviterIds: Set<UUID> = []
+  /// 我已經發出邀請、對方尚未接受/拒絕的使用者 ID，顯示「邀請中」
+  @State private var pendingInviteeIds: Set<UUID> = []
   /// 發送邀請後若有失敗，顯示錯誤訊息
   @State private var sendInvitationErrorMessage: String?
   /// 最後一筆發送失敗的後端訊息（用於顯示 word_set not found 等提示）
@@ -440,8 +442,10 @@ private struct CollaboratorPickerView: View {
           Section("好友") {
             ForEach(communityViewModel.friends) { friend in
               let isAlreadyCollaborator = initialSelectedIds.contains(friend.userId) || pendingInviterIds.contains(friend.userId)
+              let isPendingInvitee = pendingInviteeIds.contains(friend.userId)
+              let cannotSelect = isAlreadyCollaborator || isPendingInvitee
               Button {
-                if !isAlreadyCollaborator { toggleSelection(friend.userId) }
+                if !cannotSelect { toggleSelection(friend.userId) }
               }               label: {
                 HStack(spacing: 12) {
                   CollaboratorAvatarView(displayName: friend.displayName, avatarURL: friend.avatarURL, size: 44)
@@ -457,6 +461,14 @@ private struct CollaboratorPickerView: View {
                           .padding(.vertical, 2)
                           .background(Color.green)
                           .cornerRadius(6)
+                      } else if isPendingInvitee {
+                        Text("邀請中")
+                          .font(.caption2)
+                          .foregroundStyle(.white)
+                          .padding(.horizontal, 6)
+                          .padding(.vertical, 2)
+                          .background(Color.orange)
+                          .cornerRadius(6)
                       }
                     }
                     Text("Lv \(friend.level)")
@@ -467,6 +479,10 @@ private struct CollaboratorPickerView: View {
                   if isAlreadyCollaborator {
                     Image(systemName: "checkmark.circle.fill")
                       .foregroundStyle(.green)
+                  } else if isPendingInvitee {
+                    Image(systemName: "clock.fill")
+                      .font(.caption)
+                      .foregroundStyle(.orange)
                   } else if localSelection.contains(friend.userId) {
                     Image(systemName: "checkmark.circle.fill")
                       .foregroundStyle(.blue)
@@ -477,7 +493,7 @@ private struct CollaboratorPickerView: View {
                 }
               }
               .buttonStyle(.plain)
-              .disabled(isAlreadyCollaborator)
+              .disabled(cannotSelect)
             }
           }
         }
@@ -503,6 +519,8 @@ private struct CollaboratorPickerView: View {
           let invitationService = WordSetInvitationService(authService: authService, userId: currentUserId)
           let myPending = (try? await invitationService.fetchMyPendingInvitations()) ?? []
           pendingInviterIds = Set(myPending.filter { $0.wordSetId == wordSetId }.map(\.inviterId))
+          let mySentPending = (try? await invitationService.fetchPendingInvitations(wordSetId: wordSetId)) ?? []
+          pendingInviteeIds = Set(mySentPending.map(\.inviteeId))
         }
       }
       .alert("發送邀請失敗", isPresented: Binding(
@@ -533,15 +551,19 @@ private struct CollaboratorPickerView: View {
       return
     }
     let invitationService = WordSetInvitationService(authService: authService, userId: currentUserId)
-    // 不重複邀請已是共編者或已邀請過我的人
-    let toInvite = localSelection.filter { !initialSelectedIds.contains($0) && !pendingInviterIds.contains($0) }
+    // 不重複邀請已是共編者、已邀請過我的人、或已發出邀請尚待回覆的人
+    let toInvite = localSelection.filter {
+      !initialSelectedIds.contains($0) && !pendingInviterIds.contains($0) && !pendingInviteeIds.contains($0)
+    }
     print("[WordSet] 邀請共編：wordSetId=\(wordSetId), 將發送給 \(toInvite.count) 人, targetUserIds=\(toInvite.map(\.uuidString))")
     var successCount = 0
     var failureCount = 0
+    var succeededIds: [UUID] = []
     for inviteeId in toInvite {
       do {
         try await invitationService.sendInvitation(wordSetId: wordSetId, inviteeId: inviteeId)
         successCount += 1
+        succeededIds.append(inviteeId)
         print("✅ [WordSet] sendInvitation Success: inviteeId=\(inviteeId)")
       } catch {
         failureCount += 1
@@ -552,6 +574,11 @@ private struct CollaboratorPickerView: View {
     }
     print("[WordSet] 邀請結果：Success=\(successCount), Error=\(failureCount)")
     await MainActor.run {
+      // 發送成功的人加入「邀請中」，並從選取中移除
+      for id in succeededIds {
+        pendingInviteeIds.insert(id)
+        localSelection.remove(id)
+      }
       if failureCount > 0 {
         let hint = (lastSendInvitationError?.contains("word_set not found") == true)
           ? "（此單字集尚未同步至伺服器，請確認網路連線後重試。）"

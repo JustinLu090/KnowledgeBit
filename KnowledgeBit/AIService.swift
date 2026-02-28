@@ -25,6 +25,12 @@ struct GenerateCardsResponse: Decodable {
   let cards: [GeneratedCardItem]
 }
 
+/// 送給 generate-card 的請求 body（傳入現有單字可減少重複產生）
+private struct GenerateCardBody: Encodable {
+  let prompt: String
+  let existing_words: [String]?
+}
+
 /// 單題選擇題（挖空句 + 四選一 + 詳解），與 generate-quiz 回傳格式對應
 struct ChoiceQuestion: Decodable {
   let sentence_with_blank: String
@@ -65,36 +71,71 @@ final class AIService {
   }
 
   /// 根據主題產生多張單字卡，歸於同一單字集使用。
-  /// - Parameter prompt: 使用者輸入的主題或描述，例如「餐廳用餐」「旅行必備單字」
+  /// 網路不穩時會自動重試最多 3 次（間隔 2 秒）。
+  /// - Parameters:
+  ///   - prompt: 使用者輸入的主題或描述，例如「餐廳用餐」「旅行必備單字」
+  ///   - existingWords: 單字集內已存在的單字（會傳給 API 避免重複產生）；建議傳小寫以利比對
   /// - Returns: 多張單字卡，每張含 word、definition、example_sentence，可 map 成 Card
-  func generateCards(prompt: String) async throws -> [GeneratedCardItem] {
+  func generateCards(prompt: String, existingWords: [String] = []) async throws -> [GeneratedCardItem] {
     let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else {
       throw AIServiceError.emptyPrompt
     }
 
-    let body = ["prompt": trimmed]
+    let normalizedExisting = existingWords
+      .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+      .filter { !$0.isEmpty }
+    let body = GenerateCardBody(
+      prompt: trimmed,
+      existing_words: normalizedExisting.isEmpty ? nil : normalizedExisting
+    )
     let options = FunctionInvokeOptions(body: body)
+    let maxAttempts = 3
+    let retryDelay: UInt64 = 2_000_000_000 // 2 seconds
 
-    do {
-      let response: GenerateCardsResponse = try await client.functions.invoke(
-        "generate-card",
-        options: options
-      )
-      return response.cards
-    } catch {
-      print("[AIService] generateCards failed: \(error)")
-      if let ns = error as NSError? {
-        print("[AIService] NSError domain=\(ns.domain), code=\(ns.code), userInfo=\(ns.userInfo)")
+    var lastError: Error?
+    for attempt in 1...maxAttempts {
+      do {
+        let response: GenerateCardsResponse = try await client.functions.invoke(
+          "generate-card",
+          options: options
+        )
+        return response.cards
+      } catch {
+        lastError = error
+        let isRetryableNetworkError: Bool = {
+          if let urlError = error as? URLError {
+            switch urlError.code {
+            case .networkConnectionLost, .timedOut, .notConnectedToInternet:
+              return true
+            default:
+              return false
+            }
+          }
+          return false
+        }()
+        if isRetryableNetworkError, attempt < maxAttempts {
+          print("[AIService] generateCards 網路錯誤，\(attempt)/\(maxAttempts) 秒後重試: \(error.localizedDescription)")
+          try? await Task.sleep(nanoseconds: retryDelay)
+          continue
+        }
+        print("[AIService] generateCards failed: \(error)")
+        if let ns = error as NSError? {
+          print("[AIService] NSError domain=\(ns.domain), code=\(ns.code), userInfo=\(ns.userInfo)")
+        }
+        if let body = Self.extractResponseBody(from: error) {
+          print("[AIService] Response body: \(body)")
+        }
+        if let urlError = error as? URLError {
+          throw AIServiceError.network(urlError)
+        }
+        throw AIServiceError.invokeFailed(error)
       }
-      if let body = Self.extractResponseBody(from: error) {
-        print("[AIService] Response body: \(body)")
-      }
-      if let urlError = error as? URLError {
-        throw AIServiceError.network(urlError)
-      }
-      throw AIServiceError.invokeFailed(error)
     }
+    if let urlError = lastError as? URLError {
+      throw AIServiceError.network(urlError)
+    }
+    throw AIServiceError.invokeFailed(lastError ?? NSError(domain: "AIService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unknown error"]))
   }
 
   /// 依單字集（卡片）產生選擇題：挖空句 + 四選一。

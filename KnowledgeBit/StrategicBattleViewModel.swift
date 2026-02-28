@@ -46,11 +46,17 @@ final class StrategicBattleViewModel: ObservableObject {
 
   /// 上一輪結算的雙方動作統整（結算後或進入畫面時填入，供 UI 顯示）
   @Published private(set) var lastRoundSummary: BattleRoundSummary? = nil
+  /// 上一輪對應的 bucket 起始時間（供 UI 顯示「上一輪 09:00–10:00」）
+  @Published private(set) var lastRoundBucket: Date? = nil
+
+  /// 上次提交失敗時，該筆 allocation 對應的 bucket；下次結算時會先重送此 bucket，再處理當前 bucket
+  private var lastFailedSubmitBucket: Date?
 
   private var timerCancellable: AnyCancellable?
   private var nowProvider: () -> Date
   private let roomId: UUID?
   private let authService: AuthService?
+  private let creatorId: UUID?
   private let pendingStore = BattlePendingStore()
   /// 每個結算週期可以使用的基礎 KE 上限（由 initialKE 決定，例如 400）
   private let baseHourlyBudget: Int
@@ -91,6 +97,7 @@ final class StrategicBattleViewModel: ObservableObject {
   init(
     roomId: UUID? = nil,
     authService: AuthService? = nil,
+    creatorId: UUID? = nil,
     initialKE: Int = 1000,
     settlementBucketSeconds: Int = 3600,
     onConsumedKE: ((Int) -> Void)? = nil,
@@ -98,6 +105,7 @@ final class StrategicBattleViewModel: ObservableObject {
   ) {
     self.roomId = roomId
     self.authService = authService
+    self.creatorId = creatorId
     let clampedInitial = max(0, initialKE)
     self.hourlyBudget = clampedInitial
     self.baseHourlyBudget = clampedInitial
@@ -146,6 +154,7 @@ final class StrategicBattleViewModel: ObservableObject {
       let prevBucket = Date(timeIntervalSince1970: bucket.timeIntervalSince1970 - Double(settlementBucketSeconds))
       if let summary = try? await service.fetchRoundSummary(roomId: rid, hourBucket: prevBucket, bucketSeconds: settlementBucketSeconds) {
         lastRoundSummary = summary
+        lastRoundBucket = prevBucket
       }
     } catch {
       #if DEBUG
@@ -296,30 +305,47 @@ final class StrategicBattleViewModel: ObservableObject {
     let newHourBucket = currentBucket()
     let previousHourBucket = Date(timeIntervalSince1970: newHourBucket.timeIntervalSince1970 - Double(settlementBucketSeconds))
     #if DEBUG
-    print("[Battle] settleHourWithCloud room=\(rid) prevBucket=\(previousHourBucket) newBucket=\(newHourBucket) bucketSeconds=\(settlementBucketSeconds) pendingKE=", pendingKE)
+    print("[Battle] settleHourWithCloud room=\(rid) prevBucket=\(previousHourBucket) newBucket=\(newHourBucket) bucketSeconds=\(settlementBucketSeconds) pendingKE=", pendingKE, "lastFailedSubmitBucket=", lastFailedSubmitBucket as Any)
     #endif
-    let toSubmit = pendingKE
     let beforeCells = cells
-    let spent = toSubmit.values.reduce(0, +)
-    pendingKE.removeAll()
-    selectedCellID = nil
-    // 本輪已投入的 KE 從總池扣除，若本輪用完則下一輪維持 0，直到再透過測驗賺取 KE
-    if spent > 0 {
-      hourlyBudget = max(0, hourlyBudget - spent)
-      onConsumedKE?(spent)
-    }
-    pendingStore.remove(roomId: rid, hourBucket: previousHourBucket)
-    WidgetReloader.reloadAll()
 
     Task { @MainActor in
       do {
+        if let failedBucket = lastFailedSubmitBucket {
+          try await service.submitAllocations(roomId: rid, hourBucket: failedBucket, allocations: pendingKE, bucketSeconds: settlementBucketSeconds)
+          let spent = pendingKE.values.reduce(0, +)
+          pendingKE.removeAll()
+          selectedCellID = nil
+          lastFailedSubmitBucket = nil
+          if spent > 0 {
+            hourlyBudget = max(0, hourlyBudget - spent)
+            onConsumedKE?(spent)
+          }
+          pendingStore.remove(roomId: rid, hourBucket: failedBucket)
+          WidgetReloader.reloadAll()
+          if let summary = try? await service.fetchRoundSummary(roomId: rid, hourBucket: failedBucket, bucketSeconds: settlementBucketSeconds) {
+            lastRoundSummary = summary
+            lastRoundBucket = failedBucket
+          }
+        }
+
+        let toSubmit = pendingKE
+        let spent = toSubmit.values.reduce(0, +)
         try await service.submitAllocations(roomId: rid, hourBucket: previousHourBucket, allocations: toSubmit, bucketSeconds: settlementBucketSeconds)
+        pendingKE.removeAll()
+        selectedCellID = nil
+        if spent > 0 {
+          hourlyBudget = max(0, hourlyBudget - spent)
+          onConsumedKE?(spent)
+        }
+        pendingStore.remove(roomId: rid, hourBucket: previousHourBucket)
+        WidgetReloader.reloadAll()
+
         var dtos = try await service.fetchBoardState(roomId: rid, hourBucket: newHourBucket, bucketSeconds: settlementBucketSeconds)
         #if DEBUG
         print("[Battle] after settlement board cells count=", dtos.count)
         #endif
 
-        // 僅在「新盤面 0 格己方、之前有格」時才 refetch，避免雙人局時把「被對方贏走一格」的正確結果覆蓋成錯誤的 refetch（遞迴可能漏算對方 allocation）
         let beforePlayerCount = beforeCells.filter { $0.owner == .player }.count
         let newPlayerCount = dtos.filter { $0.owner == "player" }.count
         if toSubmit.isEmpty, beforePlayerCount > 0, newPlayerCount == 0 {
@@ -358,15 +384,17 @@ final class StrategicBattleViewModel: ObservableObject {
           #endif
           cells = newCells
         }
-        // 結算後取得該輪雙方投入統整，供 UI 顯示
         if let summary = try? await service.fetchRoundSummary(roomId: rid, hourBucket: previousHourBucket, bucketSeconds: settlementBucketSeconds) {
           lastRoundSummary = summary
+          lastRoundBucket = previousHourBucket
         }
       } catch {
         #if DEBUG
         print("[Battle] settleHourWithCloud error:", error)
         #endif
-        // Keep current board on error
+        if lastFailedSubmitBucket == nil {
+          lastFailedSubmitBucket = previousHourBucket
+        }
       }
     }
   }
@@ -488,20 +516,27 @@ final class StrategicBattleViewModel: ObservableObject {
 
   // MARK: - Board bootstrap (UPDATED)
 
+  /// 初始 placeholder：左上 #1 = 紅隊(invited) 出發、右下 #16 = 藍隊(creator) 出發；依當前使用者顯示 player/enemy。
   private func bootstrapInitialBoard() {
-    let hpMax = 400
+    let isRedTeam: Bool = {
+      guard let cid = creatorId, let me = authService?.currentUserId else { return false }
+      return me != cid
+    }()
     cells = (0..<16).map { id in
       var owner: Owner = .neutral
       var hpNow = 120
+      var hpMax = 400
 
       if id == 0 {
-        // 左上角：敵方起始格
-        owner = .enemy
-        hpNow = 220
+        // 左上 #1：紅隊(invited) 出發，固定 100 HP 不扣血
+        owner = isRedTeam ? .player : .enemy
+        hpNow = 100
+        hpMax = 100
       } else if id == 15 {
-        // 右下角：玩家起始格
-        owner = .player
-        hpNow = 240
+        // 右下 #16：藍隊(creator) 出發，固定 100 HP 不扣血
+        owner = isRedTeam ? .enemy : .player
+        hpNow = 100
+        hpMax = 100
       }
 
       return Cell(

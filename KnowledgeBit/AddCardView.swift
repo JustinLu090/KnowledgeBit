@@ -129,6 +129,7 @@ struct AddCardView: View {
   }
 
   /// 依主題用 AI 產生多張單字卡，寫入所選單字集（或新建單字集），然後關閉畫面。
+  /// 會傳入單字集內已有單字給 API 並在寫入前再過濾，避免與現有或共編者已產生的字卡重複。
   private func generateCardsWithAI() async {
     aiErrorMessage = nil
     isAIGenerating = true
@@ -136,37 +137,61 @@ struct AddCardView: View {
 
     print("[AddCardView] AI generate: isLoggedIn=\(authService.isLoggedIn)")
 
+    // 先決定目標單字集，才能取得「已存在的單字」供 API 與本機去重
+    let targetSet: WordSet
+    if let existing = selectedWordSet ?? wordSet {
+      targetSet = existing
+    } else {
+      let setName = String(aiPrompt.prefix(30)).trimmingCharacters(in: .whitespacesAndNewlines)
+      let ownerId = authService.currentUserId
+      targetSet = WordSet(
+        title: setName.isEmpty ? "AI 單字集" : setName,
+        ownerUserId: ownerId
+      )
+      modelContext.insert(targetSet)
+    }
+
+    let existingTitlesNormalized = Set(
+      targetSet.cards.map { $0.title.trimmingCharacters(in: .whitespaces).lowercased() }
+    )
+
     let service = AIService(client: authService.getClient())
     do {
-      let items = try await service.generateCards(prompt: aiPrompt)
+      let existingWordsForAPI = Array(existingTitlesNormalized)
+      let items = try await service.generateCards(prompt: aiPrompt, existingWords: existingWordsForAPI)
       guard !items.isEmpty else {
         aiErrorMessage = "未產生任何單字卡，請換個主題再試"
         return
       }
 
-      // 決定要加入的單字集：已選 > 進入時帶入 > 依主題新建
-      let targetSet: WordSet
-      if let existing = selectedWordSet ?? wordSet {
-        targetSet = existing
-      } else {
-        let setName = String(aiPrompt.prefix(30)).trimmingCharacters(in: .whitespacesAndNewlines)
-        let ownerId = authService.currentUserId
-        targetSet = WordSet(
-          title: setName.isEmpty ? "AI 單字集" : setName,
-          ownerUserId: ownerId
-        )
-        modelContext.insert(targetSet)
+      // 本機再過濾一次：與現有重複或同批內重複的都不插入
+      var seenNormalized = existingTitlesNormalized
+      let toInsert = items.filter { item in
+        let key = item.word.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !key.isEmpty, !seenNormalized.contains(key) else { return false }
+        seenNormalized.insert(key)
+        return true
+      }
+
+      if toInsert.isEmpty {
+        aiErrorMessage = "產生的單字與現有字卡重複，未新增任何卡片。請換個主題或單字集再試。"
+        return
       }
 
       var createdCards: [Card] = []
-      for item in items {
+      for item in toInsert {
         let card = Card(
-          title: item.word,
+          title: item.word.trimmingCharacters(in: .whitespaces),
           content: item.markdownContent,
           wordSet: targetSet
         )
         modelContext.insert(card)
         createdCards.append(card)
+      }
+
+      let skippedCount = items.count - toInsert.count
+      if skippedCount > 0 {
+        print("[AddCardView] AI 產生：新增 \(toInsert.count) 張，略過 \(skippedCount) 張重複單字")
       }
 
       try modelContext.save()

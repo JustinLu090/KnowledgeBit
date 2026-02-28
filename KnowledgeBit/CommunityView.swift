@@ -256,6 +256,10 @@ struct CommunityView: View {
       let service = WordSetInvitationService(authService: authService, userId: uid)
       let list = try await service.fetchMyPendingInvitations()
       await MainActor.run { wordSetInvitations = list }
+    } catch is CancellationError {
+      // 使用者快速切換分頁時 task 被取消，不視為錯誤
+    } catch let urlError as URLError where urlError.code == .cancelled {
+      // 請求被取消（例如離開畫面），不記錄
     } catch {
       print("⚠️ [Community] loadWordSetInvitations 失敗: \(error)")
     }

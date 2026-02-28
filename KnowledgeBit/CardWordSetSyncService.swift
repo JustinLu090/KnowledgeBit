@@ -36,7 +36,11 @@ final class CardWordSetSyncService {
     iso8601.string(from: date)
   }
 
+  /// 僅單字集擁有者會寫入 Supabase；共編者不應 upsert 別人的 word_sets（會觸發 RLS 拒絕）。
   func syncWordSet(_ wordSet: WordSet) async {
+    let isOwner = wordSet.ownerUserId == nil || wordSet.ownerUserId == currentUserId
+    guard isOwner else { return }
+
     struct Payload: Encodable {
       let id: UUID
       let user_id: UUID

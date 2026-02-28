@@ -12,6 +12,8 @@ const corsHeaders = {
 
 interface RequestBody {
   prompt: string;
+  /** 單字集內已存在的單字（小寫），AI 會避免重複產生 */
+  existing_words?: string[];
 }
 
 interface GeneratedCardItem {
@@ -45,13 +47,23 @@ Deno.serve(async (req) => {
       );
     }
 
+    const existingWords = Array.isArray(body?.existing_words)
+      ? body.existing_words.filter((w) => typeof w === "string" && w.trim().length > 0).map((w) => w.trim().toLowerCase())
+      : [];
+    const existingHint =
+      existingWords.length > 0
+        ? `\n\n重要：以下單字已在單字集中，請「不要」再產生這些單字（避免重複）：${existingWords.join(", ")}。請只產生「尚未出現」的單字。`
+        : "";
+
     const systemPrompt = `你是一個單字卡助手。根據使用者給的「主題」（例如：餐廳用餐、旅行、程式用語），產生「多張」獨立的單字卡，每張卡一個單字/詞。
 回傳必須是「一個 JSON 陣列」，陣列中每個元素代表一張單字卡，且只包含以下三個欄位（不要多餘的 markdown 程式碼區塊或說明）：
 - "word": 單字或詞（英文或目標語言，簡短）
 - "definition": 中文或使用者語言的定義/解釋，簡潔
 - "example_sentence": 一句例句（可含中文翻譯），幫助記憶
 
-請依主題產出 5～10 張單字卡，品質優先。回傳格式範例：
+請依主題產出 5～10 張單字卡，品質優先。${existingHint}
+
+回傳格式範例：
 [{"word":"vocabulary","definition":"詞彙","example_sentence":"I need to expand my vocabulary. (我需要擴充詞彙。)"},{"word":"..."}]`;
 
     const response = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
@@ -92,11 +104,21 @@ Deno.serve(async (req) => {
       );
     }
 
-    const cards = parsed.map((item) => ({
-      word: typeof item.word === "string" ? item.word.trim() : "",
-      definition: typeof item.definition === "string" ? item.definition.trim() : "",
-      example_sentence: typeof item.example_sentence === "string" ? item.example_sentence.trim() : "",
-    })).filter((c) => c.word.length > 0);
+    const existingSet = new Set(existingWords);
+    const seen = new Set<string>();
+    const cards = parsed
+      .map((item) => ({
+        word: typeof item.word === "string" ? item.word.trim() : "",
+        definition: typeof item.definition === "string" ? item.definition.trim() : "",
+        example_sentence: typeof item.example_sentence === "string" ? item.example_sentence.trim() : "",
+      }))
+      .filter((c) => c.word.length > 0)
+      .filter((c) => {
+        const key = c.word.toLowerCase();
+        if (existingSet.has(key) || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
 
     return new Response(
       JSON.stringify({ cards }),

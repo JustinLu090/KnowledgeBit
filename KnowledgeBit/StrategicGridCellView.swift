@@ -41,11 +41,13 @@ struct StrategicGridCellView: View {
         Spacer()
         GeometryReader { geo in
           let w = geo.size.width
+          let clamped = max(0, min(1, hpFraction))
+          let effectiveFraction: CGFloat = clamped > 0 && clamped < 0.03 ? 0.03 : clamped
           ZStack(alignment: .leading) {
             Capsule().fill(Color.white.opacity(0.10))
             Capsule()
               .fill(Color.white.opacity(0.70))
-              .frame(width: max(4, w * max(0, min(1, hpFraction))))
+              .frame(width: max(4, w * effectiveFraction))
           }
         }
         .frame(height: 6)

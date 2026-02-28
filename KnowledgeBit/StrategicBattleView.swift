@@ -96,6 +96,7 @@ private struct StrategicBattleViewContent: View {
       wrappedValue: StrategicBattleViewModel(
         roomId: roomId,
         authService: authService,
+        creatorId: creatorId,
         initialKE: initialKE,
         settlementBucketSeconds: bucketSeconds,
         onConsumedKE: onConsumeKE

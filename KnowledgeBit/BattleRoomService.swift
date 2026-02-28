@@ -72,32 +72,60 @@ final class BattleRoomService {
     return roomId
   }
 
-  /// 將本小時投入提交至雲端（原子 upsert）。
+  /// 將本小時投入提交至雲端（原子 upsert）。網路不穩時會自動重試最多 3 次（間隔 2 秒）。
   /// 伺服器端會在整點後彙整所有玩家投入並產生盤面。
   func submitAllocations(roomId: UUID, hourBucket: Date, allocations: [Int: Int], bucketSeconds: Int = 3600) async throws {
-    // 以簡單 RPC 傳送：room_id、hour_bucket（ISO8601）、user_id、allocations(JSON)
     let iso = ISO8601DateFormatter()
     iso.formatOptions = [.withInternetDateTime]
     let hourString = iso.string(from: hourBucket)
 
-    // 轉成 JSON 字串傳給後端（params 為 [String: String]）
     let strDict = Dictionary(uniqueKeysWithValues: allocations.map { ("\($0.key)", $0.value) })
     let allocationsJSON = (try? JSONSerialization.data(withJSONObject: strDict))
       .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
 
-    #if DEBUG
-    print("[Battle] RPC submit_battle_allocations room=\(roomId) bucket=\(hourString) bucketSeconds=\(bucketSeconds) allocations=", strDict)
-    #endif
+    let params: [String: String] = [
+      "p_room_id": roomId.uuidString,
+      "p_hour_bucket": hourString,
+      "p_user_id": userId.uuidString,
+      "p_allocations": allocationsJSON,
+      "p_bucket_seconds": String(max(60, bucketSeconds))
+    ]
 
-    _ = try await client
-      .rpc("submit_battle_allocations", params: [
-        "p_room_id": roomId.uuidString,
-        "p_hour_bucket": hourString,
-        "p_user_id": userId.uuidString,
-        "p_allocations": allocationsJSON,
-        "p_bucket_seconds": String(max(60, bucketSeconds))
-      ])
-      .execute()
+    let maxAttempts = 3
+    let retryDelay: UInt64 = 2_000_000_000
+    var lastError: Error?
+
+    for attempt in 1...maxAttempts {
+      do {
+        #if DEBUG
+        if attempt > 1 {
+          print("[Battle] submit_battle_allocations retry \(attempt)/\(maxAttempts)")
+        } else {
+          print("[Battle] RPC submit_battle_allocations room=\(roomId) bucket=\(hourString) bucketSeconds=\(bucketSeconds) allocations=", strDict)
+        }
+        #endif
+        _ = try await client.rpc("submit_battle_allocations", params: params).execute()
+        return
+      } catch {
+        lastError = error
+        let isRetryable: Bool = {
+          if let e = error as? URLError {
+            switch e.code {
+            case .networkConnectionLost, .timedOut, .notConnectedToInternet:
+              return true
+            default: return false
+            }
+          }
+          return false
+        }()
+        if isRetryable, attempt < maxAttempts {
+          try? await Task.sleep(nanoseconds: retryDelay)
+          continue
+        }
+        throw error
+      }
+    }
+    if let e = lastError { throw e }
   }
 
   /// 取得指定小時（上一輪）的雙方投入統整，供 UI 顯示「藍隊／紅隊在各格做了什麼」
@@ -118,6 +146,19 @@ final class BattleRoomService {
         if let d = try? container.decode([String: Int].self) { dict = d; return }
         if let d = try? container.decode([String: Double].self) {
           dict = d.mapValues { Int($0.rounded()) }
+          return
+        }
+        // 部分客戶端會把 JSONB 回傳成字串
+        if let raw = try? container.decode(String.self),
+           let data = raw.data(using: .utf8),
+           let decoded = try? JSONDecoder().decode([String: Int].self, from: data) {
+          dict = decoded
+          return
+        }
+        if let raw = try? container.decode(String.self),
+           let data = raw.data(using: .utf8),
+           let decoded = try? JSONDecoder().decode([String: Double].self, from: data) {
+          dict = decoded.mapValues { Int($0.rounded()) }
           return
         }
         dict = [:]
