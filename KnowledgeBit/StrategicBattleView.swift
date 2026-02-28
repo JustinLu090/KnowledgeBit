@@ -87,11 +87,7 @@ private struct StrategicBattleViewContent: View {
     self.creatorId = creatorId
     self.namespace = namespace
     self.onConsumeKE = onConsumeKE
-    #if DEBUG
-    let bucketSeconds = 120
-    #else
     let bucketSeconds = 3600
-    #endif
     _vm = StateObject(
       wrappedValue: StrategicBattleViewModel(
         roomId: roomId,
@@ -107,6 +103,9 @@ private struct StrategicBattleViewContent: View {
   var body: some View {
     content
       .onAppear { Task { await vm.loadInitialBoard() } }
+      .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+        Task { await vm.loadInitialBoard() }
+      }
       .onChange(of: vm.cells) { _, newCells in
         if newCells.count == 16, let me = authService.currentUserId {
           let snapshots = newCells.map { cell in
@@ -214,10 +213,12 @@ private struct StrategicBattleViewContent: View {
   }
 
   private var territorySummary: some View {
-    HStack(spacing: 10) {
+    let blueCount = isRedTeam ? vm.enemyOccupiedCount : vm.occupiedCount
+    let redCount = isRedTeam ? vm.occupiedCount : vm.enemyOccupiedCount
+    return HStack(spacing: 10) {
       HStack(spacing: 6) {
         Text("佔領").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
-        Text("\(vm.occupiedCount)/16").font(.system(size: 13, weight: .bold, design: .rounded))
+        Text("藍 \(blueCount)／紅 \(redCount)").font(.system(size: 13, weight: .bold, design: .rounded))
       }
       Divider().frame(height: 16)
       HStack(spacing: 6) {

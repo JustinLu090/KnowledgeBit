@@ -41,22 +41,6 @@ struct BattleRoomView: View {
 
         statusCard
 
-        // ⚠️ 測試用：無視時間，直接進入戰鬥盤面（之後正式開發可移除）
-        NavigationLink {
-          StrategicBattleView(roomId: roomId, wordSetID: wordSetID, creatorId: creatorId, wordSetTitle: wordSetTitle)
-        } label: {
-          HStack {
-            Image(systemName: "hammer.fill")
-            Text("（測試）直接進入戰鬥盤面")
-              .fontWeight(.semibold)
-          }
-          .frame(maxWidth: .infinity)
-          .padding()
-          .background(Color.orange.opacity(0.15))
-          .foregroundStyle(.orange)
-          .cornerRadius(12)
-        }
-
         if isFinished {
         Text("本次對戰已結束")
           .font(.headline)

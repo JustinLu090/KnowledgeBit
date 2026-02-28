@@ -1,5 +1,5 @@
 // StatisticsView.swift
-// 學習統計頁面：本週每日 EXP、總學習時長、單字複習平均正確率（Swift Charts）
+// 學習統計頁面：本週每日 EXP、單字複習平均正確率（Swift Charts）
 
 import SwiftUI
 import SwiftData
@@ -15,8 +15,6 @@ struct StatisticsView: View {
       VStack(alignment: .leading, spacing: 24) {
         // 本週每日 EXP
         weeklyExpSection
-        // 本週總學習時長
-        weeklyStudyMinutesSection
         // 單字複習平均正確率
         averageAccuracySection
       }
@@ -61,31 +59,6 @@ struct StatisticsView: View {
         .frame(height: 200)
       }
     }
-    .padding(16)
-    .background(Color(.secondarySystemGroupedBackground))
-    .cornerRadius(16)
-  }
-  
-  // MARK: - 本週總學習時長
-  private var weeklyStudyMinutesSection: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      Text("本週總學習時長")
-        .font(.headline)
-        .foregroundStyle(.primary)
-      
-      HStack(alignment: .firstTextBaseline, spacing: 4) {
-        Image(systemName: "clock.fill")
-          .foregroundStyle(.orange)
-        Text("\(viewModel.weeklyTotalStudyMinutes)")
-          .font(.system(size: 28, weight: .bold))
-          .foregroundStyle(.primary)
-        Text("分鐘")
-          .font(.title3)
-          .foregroundStyle(.secondary)
-      }
-      .padding(.vertical, 8)
-    }
-    .frame(maxWidth: .infinity, alignment: .leading)
     .padding(16)
     .background(Color(.secondarySystemGroupedBackground))
     .cornerRadius(16)

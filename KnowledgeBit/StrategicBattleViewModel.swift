@@ -155,6 +155,14 @@ final class StrategicBattleViewModel: ObservableObject {
       if let summary = try? await service.fetchRoundSummary(roomId: rid, hourBucket: prevBucket, bucketSeconds: settlementBucketSeconds) {
         lastRoundSummary = summary
         lastRoundBucket = prevBucket
+        // 若後端剛寫入資料可能尚未可見，空結果時延遲再試一次
+        if summary.blueAllocations.isEmpty && summary.redAllocations.isEmpty {
+          try? await Task.sleep(nanoseconds: 1_500_000_000)
+          if let retry = try? await service.fetchRoundSummary(roomId: rid, hourBucket: prevBucket, bucketSeconds: settlementBucketSeconds),
+             !retry.blueAllocations.isEmpty || !retry.redAllocations.isEmpty {
+            lastRoundSummary = retry
+          }
+        }
       }
     } catch {
       #if DEBUG
@@ -176,6 +184,11 @@ final class StrategicBattleViewModel: ObservableObject {
 
   var occupiedCount: Int {
     cells.filter { $0.owner == .player }.count
+  }
+
+  /// 對方佔領格數（供 UI 顯示「藍隊 X 格、紅隊 Y 格」讓雙方看到一致數字）
+  var enemyOccupiedCount: Int {
+    cells.filter { $0.owner == .enemy }.count
   }
 
   var totalInvestedThisHour: Int {
