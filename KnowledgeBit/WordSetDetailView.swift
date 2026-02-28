@@ -82,6 +82,10 @@ struct WordSetDetailView: View {
         if isOwner {
           Button {
             Task {
+              // 先將單字集同步到 Supabase，避免後端 create_word_set_invitation 回傳 "word_set not found"
+              if let sync = CardWordSetSyncService.createIfLoggedIn(authService: authService) {
+                await sync.syncWordSet(wordSet)
+              }
               await loadCollaborators()
               showingCollaboratorPicker = true
             }
@@ -398,6 +402,10 @@ private struct CollaboratorPickerView: View {
   @State private var localSelection: Set<UUID> = []
   /// 已經邀請過我的使用者 ID（pending），這些人應顯示為「已加入」且不可再邀請
   @State private var pendingInviterIds: Set<UUID> = []
+  /// 發送邀請後若有失敗，顯示錯誤訊息
+  @State private var sendInvitationErrorMessage: String?
+  /// 最後一筆發送失敗的後端訊息（用於顯示 word_set not found 等提示）
+  @State private var lastSendInvitationError: String?
 
   var body: some View {
     NavigationStack {
@@ -497,6 +505,16 @@ private struct CollaboratorPickerView: View {
           pendingInviterIds = Set(myPending.filter { $0.wordSetId == wordSetId }.map(\.inviterId))
         }
       }
+      .alert("發送邀請失敗", isPresented: Binding(
+        get: { sendInvitationErrorMessage != nil },
+        set: { if !$0 { sendInvitationErrorMessage = nil } }
+      )) {
+        Button("確定", role: .cancel) { sendInvitationErrorMessage = nil }
+      } message: {
+        if let msg = sendInvitationErrorMessage {
+          Text(msg)
+        }
+      }
     }
   }
 
@@ -510,18 +528,39 @@ private struct CollaboratorPickerView: View {
 
   /// 發送邀請給選取的好友（對方需在社群接受後才會加入共編）
   private func sendInvitations() async {
-    guard let currentUserId = authService.currentUserId else { return }
+    guard let currentUserId = authService.currentUserId else {
+      print("⚠️ [WordSet] sendInvitations 跳過：無 currentUserId")
+      return
+    }
     let invitationService = WordSetInvitationService(authService: authService, userId: currentUserId)
     // 不重複邀請已是共編者或已邀請過我的人
     let toInvite = localSelection.filter { !initialSelectedIds.contains($0) && !pendingInviterIds.contains($0) }
+    print("[WordSet] 邀請共編：wordSetId=\(wordSetId), 將發送給 \(toInvite.count) 人, targetUserIds=\(toInvite.map(\.uuidString))")
+    var successCount = 0
+    var failureCount = 0
     for inviteeId in toInvite {
       do {
         try await invitationService.sendInvitation(wordSetId: wordSetId, inviteeId: inviteeId)
+        successCount += 1
+        print("✅ [WordSet] sendInvitation Success: inviteeId=\(inviteeId)")
       } catch {
-        print("⚠️ [WordSet] sendInvitation 失敗 \(inviteeId): \(error)")
+        failureCount += 1
+        let errMsg = String(describing: error)
+        print("❌ [WordSet] sendInvitation Error: inviteeId=\(inviteeId), error=\(error)")
+        lastSendInvitationError = errMsg
       }
     }
-    await MainActor.run { dismiss() }
+    print("[WordSet] 邀請結果：Success=\(successCount), Error=\(failureCount)")
+    await MainActor.run {
+      if failureCount > 0 {
+        let hint = (lastSendInvitationError?.contains("word_set not found") == true)
+          ? "（此單字集尚未同步至伺服器，請確認網路連線後重試。）"
+          : ""
+        sendInvitationErrorMessage = "有 \(failureCount) 筆邀請發送失敗，請稍後再試。\(hint)"
+      } else {
+        dismiss()
+      }
+    }
   }
 }
 

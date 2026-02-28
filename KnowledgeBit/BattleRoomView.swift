@@ -35,30 +35,29 @@ struct BattleRoomView: View {
   private var isFinished: Bool { now >= battleEndDate }
 
   var body: some View {
-    VStack(spacing: 16) {
-      header
+    ScrollView {
+      VStack(spacing: 16) {
+        header
 
-      statusCard
+        statusCard
 
-      // ⚠️ 測試用：無視時間，直接進入戰鬥盤面（之後正式開發可移除）
-      NavigationLink {
-        StrategicBattleView(roomId: roomId, wordSetID: wordSetID, creatorId: creatorId, wordSetTitle: wordSetTitle)
-      } label: {
-        HStack {
-          Image(systemName: "hammer.fill")
-          Text("（測試）直接進入戰鬥盤面")
-            .fontWeight(.semibold)
+        // ⚠️ 測試用：無視時間，直接進入戰鬥盤面（之後正式開發可移除）
+        NavigationLink {
+          StrategicBattleView(roomId: roomId, wordSetID: wordSetID, creatorId: creatorId, wordSetTitle: wordSetTitle)
+        } label: {
+          HStack {
+            Image(systemName: "hammer.fill")
+            Text("（測試）直接進入戰鬥盤面")
+              .fontWeight(.semibold)
+          }
+          .frame(maxWidth: .infinity)
+          .padding()
+          .background(Color.orange.opacity(0.15))
+          .foregroundStyle(.orange)
+          .cornerRadius(12)
         }
-        .frame(maxWidth: .infinity)
-        .padding()
-        .background(Color.orange.opacity(0.15))
-        .foregroundStyle(.orange)
-        .cornerRadius(12)
-      }
 
-      Spacer(minLength: 0)
-
-      if isFinished {
+        if isFinished {
         Text("本次對戰已結束")
           .font(.headline)
           .foregroundStyle(.secondary)
@@ -123,9 +122,11 @@ struct BattleRoomView: View {
           .cornerRadius(12)
         }
         .padding()
+        }
       }
+      .padding()
     }
-    .padding()
+    .scrollIndicators(.visible)
     .navigationTitle("對戰房間")
     .navigationBarTitleDisplayMode(.inline)
     .onAppear { startTimer() }
