@@ -616,7 +616,49 @@ struct KnowledgeWidgetEntryView: View {
         if let card = entry.currentCard {
           let def = definitionLine(from: card.content)
           let example = exampleLine(from: card.content)
-          Link(destination: URL(string: "knowledgebit://card?id=\(card.title)")!) {
+          if let wordSetId = card.wordSet?.id {
+            Link(destination: URL(string: "knowledgebit://wordSet?wordSetId=\(wordSetId.uuidString)")!) {
+            if family == .systemSmall {
+              VStack(alignment: .leading, spacing: 4) {
+                Text(card.title)
+                  .font(.headline)
+                  .fontWeight(.bold)
+                  .lineLimit(1)
+                  .minimumScaleFactor(0.8)
+                  .frame(maxWidth: .infinity, alignment: .leading)
+                Text(def.isEmpty ? "定義..." : def)
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+                  .lineLimit(2)
+                  .frame(maxWidth: .infinity, alignment: .leading)
+              }
+            } else {
+              VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .center, spacing: 16) {
+                  Text(card.title)
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                  Text(def.isEmpty ? "定義..." : def)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if !example.isEmpty {
+                  Text(example)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+              }
+            }
+            }
+          } else {
             if family == .systemSmall {
               VStack(alignment: .leading, spacing: 4) {
                 Text(card.title)

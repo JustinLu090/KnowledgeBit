@@ -8,6 +8,7 @@ import SwiftUI
 /// 首頁標題 + 右側「新增」Menu（單字、單字集、打卡）
 struct HomeHeaderSection: View {
   @Binding var showingAddCardSheet: Bool
+  @Binding var showingAppGuide: Bool
   
   var body: some View {
     HStack(alignment: .center) {
@@ -17,27 +18,18 @@ struct HomeHeaderSection: View {
       
       Spacer()
       
-      Menu {
-        Button(action: { showingAddCardSheet = true }) {
-          Label("新增單字", systemImage: "plus.circle")
-        }
-        NavigationLink {
-          WordSetListView()
-        } label: {
-          Label("新增單字集", systemImage: "book.badge.plus")
-        }
-        NavigationLink {
-          CheckInView()
-        } label: {
-          Label("打卡", systemImage: "calendar")
+      Button {
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.86)) {
+          showingAppGuide = true
         }
       } label: {
-        Image(systemName: "plus")
+        Image(systemName: "lightbulb")
           .font(.system(size: 18, weight: .semibold))
           .foregroundStyle(.white)
           .frame(width: 36, height: 36)
           .background(Color.blue)
           .clipShape(Circle())
+          .accessibilityLabel("App Guide")
       }
     }
   }

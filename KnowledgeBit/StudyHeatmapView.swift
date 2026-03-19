@@ -100,6 +100,12 @@ struct StudyHeatmapView: View {
   @State private var selectedDay: HeatmapDay?
   @State private var selectedYear: YearSelection = .lastYear
   @State private var showingDeleteAlert = false
+  @State private var cachedHeatmapData: [HeatmapDay] = []
+  @State private var cachedMonthBlocks: [MonthBlock] = []
+  @State private var cachedTotalSubmissions: Int = 0
+  @State private var cachedActiveDaysCount: Int = 0
+  @State private var cachedMaxStreak: Int = 0
+  @State private var computeTask: Task<Void, Never>?
   
   // Grid configuration
   private let cellSize: CGFloat = 12
@@ -117,6 +123,12 @@ struct StudyHeatmapView: View {
     .padding(.vertical, 20)
     .background(Color(UIColor.secondarySystemGroupedBackground))
     .cornerRadius(16)
+    .task(id: selectedYear) {
+      recomputeCaches()
+    }
+    .onChange(of: logs.count) { _, _ in
+      recomputeCaches()
+    }
     .alert("刪除所有學習記錄", isPresented: $showingDeleteAlert) {
       Button("取消", role: .cancel) { }
       Button("刪除", role: .destructive) {
@@ -135,7 +147,7 @@ struct StudyHeatmapView: View {
       HStack {
         // Left side: Submissions count
         HStack(spacing: 4) {
-          Text("\(totalSubmissions)")
+          Text("\(cachedTotalSubmissions)")
             .font(.system(size: 13, weight: .semibold))
             .foregroundStyle(.primary)
           Text("submissions in the past year")
@@ -193,13 +205,13 @@ struct StudyHeatmapView: View {
       // Bottom row: Active days and Max streak (right aligned)
       HStack {
         Spacer()
-        Text("Total active days: \(activeDaysCount)")
+        Text("Total active days: \(cachedActiveDaysCount)")
           .font(.system(size: 13))
           .foregroundStyle(.secondary)
         Text("|")
           .font(.system(size: 13))
           .foregroundStyle(.tertiary)
-        Text("Max streak: \(maxStreak)")
+        Text("Max streak: \(cachedMaxStreak)")
           .font(.system(size: 13))
           .foregroundStyle(.secondary)
       }
@@ -213,7 +225,7 @@ struct StudyHeatmapView: View {
     ScrollViewReader { proxy in
       ScrollView(.horizontal, showsIndicators: false) {
         HStack(alignment: .top, spacing: monthGap) {
-          ForEach(monthBlocks) { monthBlock in
+          ForEach(cachedMonthBlocks) { monthBlock in
             monthBlockView(monthBlock: monthBlock)
               .id(monthBlock.id)
           }
@@ -222,12 +234,12 @@ struct StudyHeatmapView: View {
         .padding(.trailing, 20)
       }
       .onAppear {
-        let lastId = monthBlocks.last?.id
+        let lastId = cachedMonthBlocks.last?.id
         scrollToLatest(proxy: proxy, lastMonthId: lastId)
       }
       .onChange(of: selectedYear) { _, _ in
         // Scroll to latest when year changes; pass id to avoid capturing self in async
-        let lastId = monthBlocks.last?.id
+        let lastId = cachedMonthBlocks.last?.id
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
           scrollToLatest(proxy: proxy, lastMonthId: lastId)
         }
@@ -330,50 +342,6 @@ struct StudyHeatmapView: View {
   
   // MARK: - Data Processing
   
-  /// Pre-aggregate logs by calendar day (one pass) to avoid O(days × logs) in heatmapData.
-  private var logsByDate: [Date: Int] {
-    let calendar = Calendar.current
-    var dict: [Date: Int] = [:]
-    for log in logs {
-      let day = calendar.startOfDay(for: log.date)
-      dict[day, default: 0] += log.cardsReviewed
-    }
-    return dict
-  }
-  
-  /// Count study records for a specific date (O(1) lookup after logsByDate).
-  func countForDate(_ date: Date) -> Int {
-    let calendar = Calendar.current
-    let targetDate = calendar.startOfDay(for: date)
-    return logsByDate[targetDate] ?? 0
-  }
-  
-  // MARK: - Computed Properties
-  
-  /// Generate heatmap data for the selected year
-  private var heatmapData: [HeatmapDay] {
-    let calendar = Calendar.current
-    let startDate = selectedYear.startDate()
-    let endDate = selectedYear.endDate()
-    
-    // Generate days of data for the selected period
-    var days: [HeatmapDay] = []
-    var currentDate = calendar.startOfDay(for: startDate)
-    let end = calendar.startOfDay(for: endDate)
-    
-    while currentDate <= end {
-      let count = countForDate(currentDate)
-      days.append(HeatmapDay(date: currentDate, count: count))
-      
-      guard let nextDate = calendar.date(byAdding: .day, value: 1, to: currentDate) else {
-        break
-      }
-      currentDate = nextDate
-    }
-    
-    return days
-  }
-  
   /// Generate calendar data organized by months
   /// Uses precise date calculation with Calendar.range and firstDayWeekday
   func generateCalendarData() -> [MonthBlock] {
@@ -390,7 +358,7 @@ struct StudyHeatmapView: View {
     var currentYear: Int? = nil
     var currentMonthDays: [HeatmapDay] = []
     
-    for day in heatmapData {
+    for day in cachedHeatmapData {
       let month = calendar.component(.month, from: day.date)
       let year = calendar.component(.year, from: day.date)
       
@@ -505,36 +473,62 @@ struct StudyHeatmapView: View {
     return weeks
   }
   
-  /// Month blocks organized by months
-  private var monthBlocks: [MonthBlock] {
-    generateCalendarData()
-  }
-  
-  /// Total submissions in the selected period
-  private var totalSubmissions: Int {
-    heatmapData.reduce(0) { $0 + $1.count }
-  }
-  
-  /// Number of active days (days with at least one quiz)
-  private var activeDaysCount: Int {
-    heatmapData.filter { $0.count > 0 }.count
-  }
-  
-  /// Maximum consecutive streak
-  private var maxStreak: Int {
-    var maxStreak = 0
-    var currentStreak = 0
-    
-    for day in heatmapData {
-      if day.count > 0 {
-        currentStreak += 1
-        maxStreak = max(maxStreak, currentStreak)
-      } else {
-        currentStreak = 0
+  private func recomputeCaches() {
+    computeTask?.cancel()
+    let logsSnapshot = logs
+    let year = selectedYear
+    let startDate = Calendar.current.startOfDay(for: year.startDate())
+    let endDate = Calendar.current.startOfDay(for: year.endDate())
+
+    computeTask = Task.detached(priority: .userInitiated) {
+      let calendar = Calendar.current
+      // Build immutable day tuples first (Swift 6 concurrency safety across awaits).
+      let frozenTuples: [(Date, Int)] = {
+        var byDate: [Date: Int] = [:]
+        byDate.reserveCapacity(min(logsSnapshot.count, 512))
+        for log in logsSnapshot {
+          let day = calendar.startOfDay(for: log.date)
+          byDate[day, default: 0] += log.cardsReviewed
+        }
+
+        var tuples: [(Date, Int)] = []
+        tuples.reserveCapacity(Int(endDate.timeIntervalSince(startDate) / 86400) + 1)
+        var current = startDate
+        while current <= endDate {
+          tuples.append((current, byDate[current] ?? 0))
+          guard let next = calendar.date(byAdding: .day, value: 1, to: current) else { break }
+          current = next
+        }
+        return tuples
+      }()
+
+      // Derive stats (cheap) from immutable tuples.
+      let frozenTotal = frozenTuples.reduce(0) { $0 + $1.1 }
+      let frozenActive = frozenTuples.reduce(0) { $0 + ($1.1 > 0 ? 1 : 0) }
+      let frozenMaxStreak: Int = {
+        var maxStreak = 0
+        var streak = 0
+        for (_, count) in frozenTuples {
+          if count > 0 {
+            streak += 1
+            if streak > maxStreak { maxStreak = streak }
+          } else {
+            streak = 0
+          }
+        }
+        return maxStreak
+      }()
+
+      await MainActor.run {
+        if Task.isCancelled { return }
+        let mappedDays = frozenTuples.map { HeatmapDay(date: $0.0, count: $0.1) }
+        cachedHeatmapData = mappedDays
+        cachedMonthBlocks = generateCalendarData()
+        cachedTotalSubmissions = frozenTotal
+        cachedActiveDaysCount = frozenActive
+        cachedMaxStreak = frozenMaxStreak
       }
     }
-    
-    return maxStreak
   }
   
   // MARK: - Helper Methods

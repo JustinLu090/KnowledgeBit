@@ -19,32 +19,34 @@ struct CommunityView: View {
     NavigationStack {
       ScrollView {
         VStack(spacing: 24) {
-          // 我的邀請連結與 QR Code
-          inviteSection
-          // 搜尋欄
-          searchSection
+          CompactPageHeader("社群")
 
-          // 單字集邀請（待確認）
-          if !wordSetInvitations.isEmpty {
-            wordSetInvitationsSection
+          VStack(spacing: 24) {
+            // 我的邀請連結與 QR Code
+            inviteSection
+            // 搜尋欄
+            searchSection
+
+            // 單字集邀請（待確認）
+            if !wordSetInvitations.isEmpty {
+              wordSetInvitationsSection
+            }
+
+            // 好友請求（有 pending 時顯示）
+            if !viewModel.pendingRequests.isEmpty {
+              pendingRequestsSection
+            }
+
+            // 好友列表
+            friendsSection
           }
-
-          // 好友請求（有 pending 時顯示）
-          if !viewModel.pendingRequests.isEmpty {
-            pendingRequestsSection
-          }
-
-          // 好友列表
-          friendsSection
+          .padding(.horizontal, 20)
+          .padding(.bottom, 32)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 16)
-        .padding(.bottom, 32)
       }
       .scrollDismissesKeyboard(.interactively)
       .background(Color(.systemGroupedBackground))
-      .navigationTitle("社群")
-      .navigationBarTitleDisplayMode(.large)
+      .toolbar(.hidden, for: .navigationBar)
       .alert("提示", isPresented: .constant(viewModel.errorMessage != nil)) {
         Button("確定") { viewModel.errorMessage = nil }
       } message: {

@@ -6,19 +6,22 @@ import SwiftData
 
 struct ProfileView: View {
   @EnvironmentObject var authService: AuthService
+  @EnvironmentObject var dailyQuestService: DailyQuestService
   @Environment(\.modelContext) private var modelContext
   @Query private var userProfiles: [UserProfile]
   @StateObject private var profileViewModel = ProfileViewModel()
   @State private var showingSettingsSheet = false
   @State private var showingEditProfileSheet = false
+  @State private var showingAchievementsSheet = false
   
   var body: some View {
     NavigationStack {
       ScrollView {
         VStack(spacing: 24) {
+          CompactPageHeader("個人")
+
           // Profile header
           profileHeader
-            .padding(.top, 20)
             .padding(.horizontal, 20)
           
           // Settings section
@@ -34,10 +37,15 @@ struct ProfileView: View {
         }
       }
       .background(Color(.systemGroupedBackground))
-      .navigationTitle("個人")
-      .navigationBarTitleDisplayMode(.large)
+      .toolbar(.hidden, for: .navigationBar)
       .sheet(isPresented: $showingSettingsSheet) {
         SettingsView()
+      }
+      .sheet(isPresented: $showingAchievementsSheet) {
+        NavigationStack {
+          LearningStatisticsView(showsCloseButton: true)
+            .environmentObject(dailyQuestService)
+        }
       }
       .onAppear {
         let currentProfile = userProfiles.first { $0.userId == authService.currentUserId }
@@ -111,6 +119,31 @@ struct ProfileView: View {
             .frame(width: 30)
           
           Text("應用程式設定")
+            .font(.system(size: 16))
+            .foregroundStyle(.primary)
+          
+          Spacer()
+          
+          Image(systemName: "chevron.right")
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(.tertiary)
+        }
+        .padding(16)
+        .background(Color(.secondarySystemGroupedBackground))
+        .cornerRadius(12)
+      }
+      .buttonStyle(.plain)
+
+      Button(action: {
+        showingAchievementsSheet = true
+      }) {
+        HStack(spacing: 16) {
+          Image(systemName: "chart.bar.fill")
+            .font(.system(size: 20))
+            .foregroundStyle(.blue)
+            .frame(width: 30)
+          
+          Text("查看成就")
             .font(.system(size: 16))
             .foregroundStyle(.primary)
           

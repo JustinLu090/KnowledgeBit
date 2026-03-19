@@ -5,7 +5,6 @@ import Foundation
 import Supabase
 import SwiftData
 
-@MainActor
 final class CardWordSetSyncService {
   private let client: SupabaseClient
   private let currentUserId: UUID
@@ -69,15 +68,35 @@ final class CardWordSetSyncService {
   }
 
   func deleteWordSet(id: UUID) async {
-    do {
-      try await client.from("word_sets")
-        .delete()
-        .eq("id", value: id)
-        .eq("user_id", value: currentUserId)
-        .execute()
-    } catch {
-      print("⚠️ [Sync] word_sets delete 失敗: \(error.localizedDescription)")
+    try? await deleteWordSetOrThrow(id: id)
+  }
+
+  func deleteWordSetOrThrow(id: UUID) async throws {
+    struct OwnedWordSetRow: Decodable {
+      let id: UUID
     }
+
+    let ownedRows: [OwnedWordSetRow] = try await client.from("word_sets")
+      .select("id")
+      .eq("id", value: id)
+      .eq("user_id", value: currentUserId)
+      .limit(1)
+      .execute()
+      .value
+
+    guard !ownedRows.isEmpty else {
+      throw NSError(
+        domain: "CardWordSetSyncService",
+        code: 403,
+        userInfo: [NSLocalizedDescriptionKey: "找不到可刪除的單字集，或你不是此單字集的創辦者。"]
+      )
+    }
+
+    try await client.from("word_sets")
+      .delete()
+      .eq("id", value: id)
+      .eq("user_id", value: currentUserId)
+      .execute()
   }
 
   // MARK: - cards
@@ -170,19 +189,22 @@ final class CardWordSetSyncService {
         .execute()
         .value
 
-      let existingIds = Set(wordSet.cards.map(\.id))
-      for row in rows where !existingIds.contains(row.id) {
-        let card = Card(title: row.title, content: row.content, wordSet: wordSet)
-        card.id = row.id
-        card.createdAt = row.created_at
-        card.isMastered = row.is_mastered
-        card.srsLevel = row.srs_level
-        card.dueAt = row.due_at
-        card.lastReviewedAt = row.last_reviewed_at
-        card.correctStreak = row.correct_streak
-        modelContext.insert(card)
+      // SwiftData context mutations should run on MainActor to avoid threading issues.
+      await MainActor.run {
+        let existingIds = Set(wordSet.cards.map(\.id))
+        for row in rows where !existingIds.contains(row.id) {
+          let card = Card(title: row.title, content: row.content, wordSet: wordSet)
+          card.id = row.id
+          card.createdAt = row.created_at
+          card.isMastered = row.is_mastered
+          card.srsLevel = row.srs_level
+          card.dueAt = row.due_at
+          card.lastReviewedAt = row.last_reviewed_at
+          card.correctStreak = row.correct_streak
+          modelContext.insert(card)
+        }
+        try? modelContext.save()
       }
-      try? modelContext.save()
     } catch {
       print("⚠️ [Sync] pullCardsForWordSet 失敗: \(error.localizedDescription)")
     }
@@ -204,23 +226,39 @@ final class CardWordSetSyncService {
         .execute()
         .value
 
-      let existingAll = (try? modelContext.fetch(FetchDescriptor<WordSet>())) ?? []
-      for row in rows {
-        if let existing = existingAll.first(where: { $0.id == row.id }) {
-          // 更新本機紀錄的真正擁有者（word_sets.user_id），以便之後區分「創辦人」與「共編者」
-          existing.ownerUserId = row.user_id
-        } else {
-          let local = WordSet(
-            id: row.id,
-            title: row.title,
-            level: row.level,
-            createdAt: row.created_at,
-            ownerUserId: row.user_id
-          )
-          modelContext.insert(local)
+      await MainActor.run {
+        let existingAll = (try? modelContext.fetch(FetchDescriptor<WordSet>())) ?? []
+        let visibleRemoteIds = Set(rows.map(\.id))
+        for row in rows {
+          if let existing = existingAll.first(where: { $0.id == row.id }) {
+            // 更新本機紀錄的真正擁有者（word_sets.user_id），以便之後區分「創辦人」與「共編者」
+            existing.ownerUserId = row.user_id
+            existing.title = row.title
+            existing.level = row.level
+            existing.createdAt = row.created_at
+          } else {
+            let local = WordSet(
+              id: row.id,
+              title: row.title,
+              level: row.level,
+              createdAt: row.created_at,
+              ownerUserId: row.user_id
+            )
+            modelContext.insert(local)
+          }
         }
+
+        // 若創辦者已刪除共編單字集，這裡會把其他成員本機殘留的「已不可見共編集」清掉。
+        // 只刪非擁有者的本機資料，避免誤刪尚未同步成功的本機自建單字集。
+        for local in existingAll {
+          let isOwnedByCurrentUser = local.ownerUserId == nil || local.ownerUserId == currentUserId
+          if !isOwnedByCurrentUser && !visibleRemoteIds.contains(local.id) {
+            modelContext.delete(local)
+          }
+        }
+
+        try? modelContext.save()
       }
-      try? modelContext.save()
     } catch {
       print("⚠️ [Sync] pullVisibleWordSetsAndMergeToLocal 失敗: \(error.localizedDescription)")
     }

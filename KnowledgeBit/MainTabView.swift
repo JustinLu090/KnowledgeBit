@@ -54,13 +54,13 @@ struct MainTabView: View {
         .tag(1)
       
       communityTab
-      
-      AchievementsView()
+
+      BattleView()
         .tabItem {
-          Label("成就", systemImage: "chart.bar.fill")
+          Label("對戰", systemImage: "trophy.fill")
         }
         .tag(3)
-      
+
       ProfileView()
         .tabItem {
           Label("個人", systemImage: "person.fill")
@@ -69,7 +69,15 @@ struct MainTabView: View {
     }
     .tint(.blue)
     .onChange(of: pendingBattleOpenStore.wordSetIdToOpen) { _, new in
-      if new != nil { selectedTab = 1 }
+      guard new != nil else { return }
+      switch pendingBattleOpenStore.openKind {
+      case .battle:
+        selectedTab = 3
+      case .wordSet:
+        selectedTab = 1
+      case .none:
+        break
+      }
     }
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
       // App 回到前景時將昨日 EXP/學習時長寫入 DailyStats（若已跨日）

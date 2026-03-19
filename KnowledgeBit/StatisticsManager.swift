@@ -70,6 +70,17 @@ final class StatisticsManager {
   /// 本週每日的 EXP 獲得總量（含今天，今天從 DailyQuestService 取）
   func weeklyDailyExp(modelContext: ModelContext, dailyQuestService: DailyQuestService) -> [DayExpItem] {
     let start = weekStart(for: Date())
+    guard let end = calendar.date(byAdding: .day, value: 7, to: start) else { return [] }
+
+    // Fetch once for the whole week, then aggregate in memory to avoid N fetches.
+    var weekDescriptor = FetchDescriptor<DailyStats>(
+      predicate: #Predicate<DailyStats> { $0.date >= start && $0.date < end },
+      sortBy: [SortDescriptor(\.date)]
+    )
+    weekDescriptor.fetchLimit = 7
+    let weekStats = (try? modelContext.fetch(weekDescriptor)) ?? []
+    let statsByDay = Dictionary(uniqueKeysWithValues: weekStats.map { (calendar.startOfDay(for: $0.date), $0) })
+
     var items: [DayExpItem] = []
     let weekdaySymbols = calendar.shortWeekdaySymbols
     for dayOffset in 0..<7 {
@@ -80,12 +91,7 @@ final class StatisticsManager {
       if isToday {
         exp = dailyQuestService.todayExpGained
       } else {
-        let descriptor = FetchDescriptor<DailyStats>(
-          predicate: #Predicate<DailyStats> { $0.date == dayStart },
-          sortBy: [SortDescriptor(\.date)]
-        )
-        let stats = (try? modelContext.fetch(descriptor))?.first
-        exp = stats?.expGained ?? 0
+        exp = statsByDay[dayStart]?.expGained ?? 0
       }
       let weekdayIndex = calendar.component(.weekday, from: day) - 1
       let dayLabel = weekdaySymbols[weekdayIndex]
@@ -97,6 +103,17 @@ final class StatisticsManager {
   /// 本週總學習時長（分鐘）
   func weeklyTotalStudyMinutes(modelContext: ModelContext, dailyQuestService: DailyQuestService) -> Int {
     let start = weekStart(for: Date())
+    guard let end = calendar.date(byAdding: .day, value: 7, to: start) else { return 0 }
+
+    // Fetch once for the whole week.
+    var weekDescriptor = FetchDescriptor<DailyStats>(
+      predicate: #Predicate<DailyStats> { $0.date >= start && $0.date < end },
+      sortBy: [SortDescriptor(\.date)]
+    )
+    weekDescriptor.fetchLimit = 7
+    let weekStats = (try? modelContext.fetch(weekDescriptor)) ?? []
+    let minutesByDay = Dictionary(uniqueKeysWithValues: weekStats.map { (calendar.startOfDay(for: $0.date), $0.studyMinutes) })
+
     var total = 0
     let today = todayStart()
     for dayOffset in 0..<7 {
@@ -105,13 +122,7 @@ final class StatisticsManager {
       if calendar.isDate(dayStart, inSameDayAs: today) {
         total += dailyQuestService.todayStudyMinutes
       } else {
-        let descriptor = FetchDescriptor<DailyStats>(
-          predicate: #Predicate<DailyStats> { $0.date == dayStart },
-          sortBy: [SortDescriptor(\.date)]
-        )
-        if let stats = (try? modelContext.fetch(descriptor))?.first {
-          total += stats.studyMinutes
-        }
+        total += minutesByDay[dayStart] ?? 0
       }
     }
     return total
@@ -125,7 +136,10 @@ final class StatisticsManager {
       sortBy: [SortDescriptor(\.date, order: .reverse)]
     )
     descriptor.predicate = #Predicate<StudyLog> { log in
-      log.date >= start && log.date < end && log.totalCards > 0
+      log.date >= start
+        && log.date < end
+        && log.totalCards > 0
+        && log.activityType == "multipleChoiceQuiz"
     }
     let logs = (try? modelContext.fetch(descriptor)) ?? []
     let totalCorrect = logs.reduce(0) { $0 + $1.cardsReviewed }

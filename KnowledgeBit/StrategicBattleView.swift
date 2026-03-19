@@ -137,34 +137,32 @@ private struct StrategicBattleViewContent: View {
   }
 
   private var content: some View {
-    NavigationStack {
-      ScrollView(.vertical, showsIndicators: true) {
-        VStack(spacing: 14) {
-          // 頂部狀態區，放在安全區域內，避免被瀏海或導航列擋住
-          statusHeader
+    ScrollView(.vertical, showsIndicators: true) {
+      VStack(spacing: 14) {
+        // 頂部狀態區，放在安全區域內，避免被瀏海或導航列擋住
+        statusHeader
+          .padding(.horizontal, 12)
+          .padding(.top, 8)
+
+        gridArea
+          .padding(.horizontal, gridPadding)
+
+        // 上一輪統整：固定顯示在地圖與底部操作區之間，不隨選格切換消失
+        if let summary = vm.lastRoundSummary {
+          roundSummarySection(summary)
             .padding(.horizontal, 12)
-            .padding(.top, 8)
-
-          gridArea
-            .padding(.horizontal, gridPadding)
-
-          // 上一輪統整：固定顯示在地圖與底部操作區之間，不隨選格切換消失
-          if let summary = vm.lastRoundSummary {
-            roundSummarySection(summary)
-              .padding(.horizontal, 12)
-          }
-
-          bottomSheet
-            .padding(.top, 8)
         }
-        .padding(.bottom, 24)
+
+        bottomSheet
+          .padding(.top, 8)
       }
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .background(Color(.systemGroupedBackground))
-      .navigationTitle("對戰")
-      .navigationBarTitleDisplayMode(.inline)
-      .overlay(lockOverlay)
+      .padding(.bottom, 24)
     }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .background(Color(.systemGroupedBackground))
+    .navigationTitle("對戰")
+    .navigationBarTitleDisplayMode(.inline)
+    .overlay(lockOverlay)
   }
 
   // MARK: - Header

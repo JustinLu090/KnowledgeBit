@@ -17,12 +17,14 @@ struct WordSetDetailView: View {
   @State private var generatedQuestions: [ChoiceQuestion]?
   @State private var quizGenerateError: String?
   @State private var isGeneratingQuiz = false
+  @State private var quizGenerationTask: Task<Void, Never>?
   @State private var showingCollaboratorPicker = false
   @State private var collaborators: [WordSetCollaborator] = []
   @State private var selectedCollaboratorIds: Set<UUID> = []
   @State private var showingCollaboratorList = false
   @State private var activeBattleSession: BattleSession? = nil
   @State private var isLoadingBattleSession = false
+  @State private var cachedSortedCards: [Card] = []
 
   /// 是否為此單字集的創辦人（依 Supabase word_sets.user_id 映射到本機 ownerUserId）
   private var isOwner: Bool {
@@ -33,7 +35,7 @@ struct WordSetDetailView: View {
 
   // Fetch cards for this word set
   private var cards: [Card] {
-    wordSet.cards.sorted { $0.createdAt > $1.createdAt }
+    cachedSortedCards
   }
 
   /// 此單字集內「除了自己」以外的成員（用於標題列頭像，不顯示自己的頭像）
@@ -112,93 +114,63 @@ struct WordSetDetailView: View {
     .safeAreaInset(edge: .bottom) {
       Group {
         if !cards.isEmpty {
-          VStack(spacing: 10) {
+          HStack(spacing: 10) {
             Button(action: { showingQuiz = true }) {
-              HStack {
-                Image(systemName: "play.fill")
-                Text("開始測驗")
-                  .fontWeight(.bold)
-              }
-              .frame(maxWidth: .infinity)
-              .padding()
-              .background(Color.blue)
-              .foregroundColor(.white)
-              .cornerRadius(10)
+              bottomBarButtonLabel(systemImage: "play.fill", title: "開始測驗")
             }
+            .buttonStyle(.plain)
+            .background(Color.blue)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .foregroundColor(.white)
+
             Button(action: startChoiceQuiz) {
-              HStack {
-                Image(systemName: "list.bullet.rectangle.fill")
-                Text("選擇題測驗")
-                  .fontWeight(.semibold)
-              }
-              .frame(maxWidth: .infinity)
-              .padding()
-              .background(Color.orange.opacity(0.9))
-              .foregroundColor(.white)
-              .cornerRadius(10)
+              bottomBarButtonLabel(systemImage: "list.bullet.rectangle.fill", title: "選擇題測驗")
             }
-            if let session = activeBattleSession, session.isActive() {
-              NavigationLink {
-                BattleRoomView(
-                  roomId: session.roomId,
-                  wordSetID: session.wordSetID,
-                  wordSetTitle: wordSet.title,
-                  startDate: session.startDate,
-                  durationDays: session.durationDays,
-                  invitedMemberIDs: session.invitedMemberIDs,
-                  creatorId: session.creatorId
-                )
-              } label: {
-                HStack {
-                  Image(systemName: "flag.2.crossed.fill")
-                  Text("對戰詳情")
-                    .fontWeight(.semibold)
+            .buttonStyle(.plain)
+            .background(Color.orange.opacity(0.92))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .foregroundColor(.white)
+
+            Group {
+              if let session = activeBattleSession, session.isActive() {
+                NavigationLink {
+                  BattleRoomView(
+                    roomId: session.roomId,
+                    wordSetID: session.wordSetID,
+                    wordSetTitle: wordSet.title,
+                    startDate: session.startDate,
+                    durationDays: session.durationDays,
+                    invitedMemberIDs: session.invitedMemberIDs,
+                    creatorId: session.creatorId
+                  )
+                } label: {
+                  bottomBarButtonLabel(systemImage: "flag.2.crossed.fill", title: "對戰詳情")
                 }
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color.purple.opacity(0.9))
+                .buttonStyle(.plain)
+                .background(Color.purple.opacity(0.92))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .foregroundColor(.white)
-                .cornerRadius(10)
-              }
-              .buttonStyle(.plain)
-            } else if isOwner {
-              NavigationLink {
-                BattleInitiationView(wordSetID: wordSet.id, wordSetTitle: wordSet.title)
-              } label: {
-                HStack {
-                  Image(systemName: "person.2.fill")
-                  Text("發起對戰")
-                    .fontWeight(.semibold)
+              } else if isOwner {
+                NavigationLink {
+                  BattleInitiationView(wordSetID: wordSet.id, wordSetTitle: wordSet.title)
+                } label: {
+                  bottomBarButtonLabel(systemImage: "person.2.fill", title: "發起對戰")
                 }
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color.purple.opacity(0.9))
+                .buttonStyle(.plain)
+                .background(Color.purple.opacity(0.92))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .foregroundColor(.white)
-                .cornerRadius(10)
+              } else if isLoadingBattleSession {
+                bottomBarStatusLabel(systemImage: nil, title: "檢查戰鬥中…")
+                  .background(Color(.systemGray5))
+                  .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                  .foregroundColor(.secondary)
+              } else {
+                bottomBarStatusLabel(systemImage: "hourglass", title: "等待對戰")
+                  .background(Color(.systemGray5))
+                  .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                  .foregroundColor(.secondary)
               }
-              .buttonStyle(.plain)
-            } else if isLoadingBattleSession {
-              HStack {
-                ProgressView()
-                Text("檢查戰鬥中…")
-                  .fontWeight(.regular)
-              }
-              .frame(maxWidth: .infinity)
-              .padding()
-              .background(Color(.systemGray5))
-              .foregroundColor(.secondary)
-              .cornerRadius(10)
-            } else {
-              HStack {
-                Image(systemName: "hourglass")
-                Text("等待創辦人發起對戰")
-                  .fontWeight(.regular)
-              }
-              .frame(maxWidth: .infinity)
-              .padding()
-              .background(Color(.systemGray5))
-              .foregroundColor(.secondary)
-              .cornerRadius(10)
             }
           }
           .padding()
@@ -231,9 +203,14 @@ struct WordSetDetailView: View {
       CollaboratorListSheet(collaborators: collaborators)
     }
     .task {
+      // Cache the sorted list once on appear; avoid re-sorting on every render.
+      cachedSortedCards = wordSet.cards.sorted { $0.createdAt > $1.createdAt }
       await loadCollaborators()
       await pullCardsForWordSetIfNeeded()
       await loadActiveBattleIfNeeded()
+    }
+    .onChange(of: wordSet.cards.count) { _, _ in
+      cachedSortedCards = wordSet.cards.sorted { $0.createdAt > $1.createdAt }
     }
   }
 
@@ -279,14 +256,17 @@ struct WordSetDetailView: View {
     isGeneratingQuiz = true
     quizGenerateError = nil
     generatedQuestions = nil
-    Task {
+    quizGenerationTask?.cancel()
+    quizGenerationTask = Task {
       do {
         let q = try await AIService(client: authService.getClient()).generateQuizQuestions(cards: cards, targetLanguage: wordSet.title)
+        if Task.isCancelled { return }
         await MainActor.run {
           generatedQuestions = q
           isGeneratingQuiz = false
         }
       } catch {
+        if Task.isCancelled { return }
         await MainActor.run {
           quizGenerateError = error.localizedDescription
           isGeneratingQuiz = false
@@ -298,17 +278,32 @@ struct WordSetDetailView: View {
   @ViewBuilder
   private var choiceQuizCoverContent: some View {
     if isGeneratingQuiz {
-      VStack(spacing: 16) {
-        ProgressView()
-          .scaleEffect(1.2)
-        Text("正在產生題目…")
-          .font(.headline)
-          .foregroundStyle(.secondary)
-        Text("可能需要 30～60 秒，請稍候")
-          .font(.caption)
-          .foregroundStyle(.tertiary)
+      NavigationStack {
+        VStack(spacing: 16) {
+          ProgressView()
+            .scaleEffect(1.2)
+          Text("正在產生題目…")
+            .font(.headline)
+            .foregroundStyle(.secondary)
+          Text("這會呼叫 AI 生成題目，可能需要 30～60 秒。")
+            .font(.subheadline)
+            .foregroundStyle(.tertiary)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 28)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemGroupedBackground))
+        .toolbar {
+          ToolbarItem(placement: .topBarLeading) {
+            Button("取消") {
+              quizGenerationTask?.cancel()
+              quizGenerationTask = nil
+              isGeneratingQuiz = false
+              showingChoiceQuiz = false
+            }
+          }
+        }
       }
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
     } else if let err = quizGenerateError {
       VStack(spacing: 20) {
         Text("無法產生題目")
@@ -330,6 +325,8 @@ struct WordSetDetailView: View {
             startChoiceQuiz()
           }
           Button("關閉") {
+            quizGenerationTask?.cancel()
+            quizGenerationTask = nil
             showingChoiceQuiz = false
             quizGenerateError = nil
           }
@@ -342,12 +339,15 @@ struct WordSetDetailView: View {
         recordChoiceQuizResult(score: score, total: total)
         showingChoiceQuiz = false
         generatedQuestions = nil
+        quizGenerationTask = nil
       }
     } else if generatedQuestions != nil {
       VStack(spacing: 16) {
         Text("未產生題目")
           .font(.headline)
         Button("關閉") {
+          quizGenerationTask?.cancel()
+          quizGenerationTask = nil
           showingChoiceQuiz = false
           generatedQuestions = nil
         }
@@ -359,7 +359,7 @@ struct WordSetDetailView: View {
   private func recordChoiceQuizResult(score: Int, total: Int) {
     let calendar = Calendar.current
     let today = calendar.startOfDay(for: Date())
-    let log = StudyLog(date: today, cardsReviewed: score, totalCards: total)
+    let log = StudyLog(date: today, cardsReviewed: score, totalCards: total, activityType: "multipleChoiceQuiz")
     modelContext.insert(log)
     try? modelContext.save()
     questService.recordWordSetCompleted(experienceStore: experienceStore)
@@ -387,6 +387,39 @@ struct WordSetDetailView: View {
         print("❌ Failed to delete card: \(error.localizedDescription)")
       }
     }
+  }
+
+  private func bottomBarButtonLabel(systemImage: String, title: String) -> some View {
+    VStack(spacing: 6) {
+      Image(systemName: systemImage)
+        .font(.system(size: 16, weight: .semibold))
+      Text(title)
+        .font(.system(size: 12, weight: .semibold))
+        .lineLimit(1)
+        .minimumScaleFactor(0.75)
+    }
+    .frame(maxWidth: .infinity)
+    .padding(.vertical, 10)
+    .padding(.horizontal, 8)
+  }
+
+  private func bottomBarStatusLabel(systemImage: String?, title: String) -> some View {
+    VStack(spacing: 6) {
+      if let systemImage {
+        Image(systemName: systemImage)
+          .font(.system(size: 16, weight: .semibold))
+      } else {
+        ProgressView()
+          .controlSize(.small)
+      }
+      Text(title)
+        .font(.system(size: 12, weight: .semibold))
+        .lineLimit(1)
+        .minimumScaleFactor(0.75)
+    }
+    .frame(maxWidth: .infinity)
+    .padding(.vertical, 10)
+    .padding(.horizontal, 8)
   }
 }
 

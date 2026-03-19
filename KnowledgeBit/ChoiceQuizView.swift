@@ -32,6 +32,11 @@ struct ChoiceQuizView: View {
     return shuffledOptionsPerQuestion[currentIndex]
   }
 
+  private var progressValue: Double {
+    guard !questions.isEmpty else { return 0 }
+    return Double(currentIndex + (showResult ? 1 : 0)) / Double(questions.count)
+  }
+
   var body: some View {
     Group {
       if showResult {
@@ -52,78 +57,52 @@ struct ChoiceQuizView: View {
           }
         )
       } else if let q = currentQuestion {
-        VStack(spacing: 24) {
-          // 左上角退出鈕
-          HStack {
-            Button {
-              if currentIndex > 0 || hasAnswered {
-                showExitConfirmation = true
-              } else {
-                dismiss()
+        ZStack {
+          LinearGradient(
+            colors: [
+              Color(.systemBackground),
+              Color.blue.opacity(0.05),
+              Color(.systemBackground)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+          )
+          .ignoresSafeArea()
+
+          VStack(spacing: 0) {
+            quizHeader
+
+            ScrollView(showsIndicators: false) {
+              VStack(spacing: 20) {
+                questionCard(q)
+
+                VStack(spacing: 12) {
+                  let options = optionsForCurrentQuestion()
+                  ForEach(Array(options.enumerated()), id: \.offset) { index, option in
+                    optionButton(
+                      option: option,
+                      optionIndex: index,
+                      correctAnswer: q.correct_answer
+                    )
+                  }
+                }
+
+                if hasAnswered, let explanation = q.explanation, !explanation.isEmpty {
+                  explanationCard(explanation)
+                }
               }
-            } label: {
-              Image(systemName: "xmark")
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 44, height: 44)
+              .padding(.horizontal, 20)
+              .padding(.top, 20)
+              .padding(.bottom, 24)
             }
-            Spacer()
-          }
-          .padding(.horizontal)
-          .padding(.top, 8)
 
-          Text("第 \(currentIndex + 1) / \(questions.count) 題")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .padding(.top, 8)
-
-          Text(displaySentence(q.sentence_with_blank))
-            .font(.title2)
-            .multilineTextAlignment(.center)
-            .padding(.horizontal, 20)
-            .padding(.vertical, 24)
-
-          VStack(spacing: 12) {
-            ForEach(optionsForCurrentQuestion(), id: \.self) { option in
-              optionButton(option: option, correctAnswer: q.correct_answer)
+            if hasAnswered {
+              bottomActionBar(
+                title: currentIndex < questions.count - 1 ? "下一題" : "看結果",
+                action: goToNext
+              )
             }
           }
-          .padding(.horizontal, 20)
-
-          if hasAnswered, let explanation = q.explanation, !explanation.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-              Text("詳解")
-                .font(.subheadline)
-                .fontWeight(.semibold)
-                .foregroundStyle(.secondary)
-              Text(explanation)
-                .font(.subheadline)
-                .foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding()
-            .background(Color(.tertiarySystemFill))
-            .cornerRadius(10)
-            .padding(.horizontal, 20)
-            .padding(.top, 8)
-          }
-
-          if hasAnswered {
-            Button(action: goToNext) {
-              Text(currentIndex < questions.count - 1 ? "下一題" : "看結果")
-                .fontWeight(.semibold)
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color.blue)
-                .foregroundColor(.white)
-                .cornerRadius(10)
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 16)
-          }
-
-          Spacer()
         }
       }
     }
@@ -141,7 +120,7 @@ struct ChoiceQuizView: View {
   }
 
   @ViewBuilder
-  private func optionButton(option: String, correctAnswer: String) -> some View {
+  private func optionButton(option: String, optionIndex: Int, correctAnswer: String) -> some View {
     let isSelected = selectedOption == option
     let isCorrect = option == correctAnswer
     let showCorrect = hasAnswered && isCorrect
@@ -154,27 +133,181 @@ struct ChoiceQuizView: View {
         if isCorrect { score += 1 }
       }
     } label: {
-      Text(option)
-        .font(.body)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(backgroundColor(showCorrect: showCorrect, showWrong: showWrong, isSelected: isSelected))
-        .foregroundColor(foregroundColor(showCorrect: showCorrect, showWrong: showWrong))
-        .cornerRadius(10)
+      HStack(spacing: 14) {
+        ZStack {
+          Circle()
+            .fill(badgeBackgroundColor(showCorrect: showCorrect, showWrong: showWrong, isSelected: isSelected))
+          Text(optionBadgeText(optionIndex))
+            .font(.system(size: 14, weight: .bold))
+            .foregroundStyle(badgeForegroundColor(showCorrect: showCorrect, showWrong: showWrong, isSelected: isSelected))
+        }
+        .frame(width: 34, height: 34)
+
+        Text(option)
+          .font(.system(size: 20, weight: .medium))
+          .multilineTextAlignment(.leading)
+          .frame(maxWidth: .infinity, alignment: .leading)
+
+        if hasAnswered {
+          Image(systemName: showCorrect ? "checkmark.circle.fill" : (showWrong ? "xmark.circle.fill" : "circle"))
+            .font(.system(size: 20, weight: .semibold))
+            .foregroundStyle(showCorrect ? .green : (showWrong ? .red : Color.secondary.opacity(0.35)))
+        }
+      }
+      .padding(.horizontal, 18)
+      .padding(.vertical, 18)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(optionBackground(showCorrect: showCorrect, showWrong: showWrong, isSelected: isSelected))
+      .overlay(
+        RoundedRectangle(cornerRadius: 22, style: .continuous)
+          .stroke(optionBorderColor(showCorrect: showCorrect, showWrong: showWrong, isSelected: isSelected), lineWidth: 1.5)
+      )
+      .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+      .shadow(color: Color.black.opacity(0.04), radius: 10, x: 0, y: 5)
     }
     .disabled(hasAnswered)
   }
 
-  private func backgroundColor(showCorrect: Bool, showWrong: Bool, isSelected: Bool) -> Color {
-    if showCorrect { return Color.green.opacity(0.25) }
-    if showWrong { return Color.red.opacity(0.25) }
-    if isSelected { return Color.blue.opacity(0.15) }
-    return Color(.secondarySystemFill)
+  private var quizHeader: some View {
+    VStack(spacing: 16) {
+      HStack {
+        Button {
+          if currentIndex > 0 || hasAnswered {
+            showExitConfirmation = true
+          } else {
+            dismiss()
+          }
+        } label: {
+          Image(systemName: "xmark")
+            .font(.system(size: 20, weight: .semibold))
+            .foregroundStyle(Color.blue)
+            .frame(width: 44, height: 44)
+            .background(Color.blue.opacity(0.10), in: Circle())
+        }
+        .buttonStyle(.plain)
+
+        Spacer()
+
+        Text("第 \(currentIndex + 1) / \(questions.count) 題")
+          .font(.system(size: 15, weight: .semibold))
+          .foregroundStyle(.secondary)
+          .padding(.horizontal, 14)
+          .padding(.vertical, 8)
+          .background(Color(.secondarySystemBackground), in: Capsule())
+
+        Spacer()
+
+        Color.clear
+          .frame(width: 44, height: 44)
+      }
+
+      ProgressView(value: progressValue)
+        .tint(.blue)
+        .scaleEffect(x: 1, y: 1.8, anchor: .center)
+    }
+    .padding(.horizontal, 20)
+    .padding(.top, 8)
+    .padding(.bottom, 16)
+    .background(.ultraThinMaterial)
   }
 
-  private func foregroundColor(showCorrect: Bool, showWrong: Bool) -> Color {
-    if showCorrect || showWrong { return .primary }
-    return .primary
+  private func questionCard(_ q: ChoiceQuestion) -> some View {
+    VStack(alignment: .leading, spacing: 16) {
+      Text("填空題")
+        .font(.system(size: 13, weight: .bold))
+        .foregroundStyle(.blue)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color.blue.opacity(0.12), in: Capsule())
+
+      Text(displaySentence(q.sentence_with_blank))
+        .font(.system(size: 27, weight: .semibold))
+        .tracking(-0.4)
+        .multilineTextAlignment(.leading)
+        .lineSpacing(4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .padding(24)
+    .background(
+      RoundedRectangle(cornerRadius: 28, style: .continuous)
+        .fill(Color(.systemBackground))
+        .shadow(color: Color.black.opacity(0.05), radius: 20, x: 0, y: 10)
+    )
+  }
+
+  private func explanationCard(_ explanation: String) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Label("詳解", systemImage: "lightbulb.fill")
+        .font(.system(size: 14, weight: .bold))
+        .foregroundStyle(.orange)
+      Text(explanation)
+        .font(.system(size: 15, weight: .medium))
+        .foregroundStyle(.primary)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(18)
+    .background(
+      RoundedRectangle(cornerRadius: 20, style: .continuous)
+        .fill(Color.orange.opacity(0.10))
+    )
+  }
+
+  private func bottomActionBar(title: String, action: @escaping () -> Void) -> some View {
+    VStack(spacing: 0) {
+      Divider()
+        .opacity(0.4)
+      Button(action: action) {
+        Text(title)
+          .font(.system(size: 17, weight: .bold))
+          .frame(maxWidth: .infinity)
+          .padding(.vertical, 16)
+          .background(
+            LinearGradient(
+              colors: [Color.blue, Color.blue.opacity(0.82)],
+              startPoint: .leading,
+              endPoint: .trailing
+            ),
+            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+          )
+          .foregroundStyle(.white)
+      }
+      .buttonStyle(.plain)
+      .padding(.horizontal, 20)
+      .padding(.top, 16)
+      .padding(.bottom, 20)
+    }
+    .background(.ultraThinMaterial)
+  }
+
+  private func optionBadgeText(_ index: Int) -> String {
+    ["A", "B", "C", "D"][safe: index] ?? "\(index + 1)"
+  }
+
+  private func optionBackground(showCorrect: Bool, showWrong: Bool, isSelected: Bool) -> Color {
+    if showCorrect { return Color.green.opacity(0.13) }
+    if showWrong { return Color.red.opacity(0.12) }
+    if isSelected { return Color.blue.opacity(0.10) }
+    return Color(.secondarySystemBackground)
+  }
+
+  private func optionBorderColor(showCorrect: Bool, showWrong: Bool, isSelected: Bool) -> Color {
+    if showCorrect { return Color.green.opacity(0.55) }
+    if showWrong { return Color.red.opacity(0.45) }
+    if isSelected { return Color.blue.opacity(0.45) }
+    return Color.black.opacity(0.05)
+  }
+
+  private func badgeBackgroundColor(showCorrect: Bool, showWrong: Bool, isSelected: Bool) -> Color {
+    if showCorrect { return .green }
+    if showWrong { return .red }
+    if isSelected { return .blue }
+    return Color(.tertiarySystemFill)
+  }
+
+  private func badgeForegroundColor(showCorrect: Bool, showWrong: Bool, isSelected: Bool) -> Color {
+    if showCorrect || showWrong || isSelected { return .white }
+    return .secondary
   }
 
   private func goToNext() {
@@ -185,5 +318,11 @@ struct ChoiceQuizView: View {
     } else {
       showResult = true
     }
+  }
+}
+
+private extension Array {
+  subscript(safe index: Int) -> Element? {
+    indices.contains(index) ? self[index] : nil
   }
 }

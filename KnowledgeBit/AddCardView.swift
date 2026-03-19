@@ -23,6 +23,7 @@ struct AddCardView: View {
   @State private var aiPrompt = ""
   @State private var isAIGenerating = false
   @State private var aiErrorMessage: String?
+  @State private var saveErrorMessage: String?
   
   // Computed property to determine if we're in edit mode
   private var isEditMode: Bool {
@@ -62,33 +63,52 @@ struct AddCardView: View {
           }
         }
 
-        Section(header: Text("基本資訊")) {
+        Section(header: Text("正面")) {
           TextField("標題 (例如：Knowledge)", text: $title)
         }
         
 
-        Section(header: Text("詳細筆記 (Markdown)")) {
+        Section(header: Text("反面")) {
           TextEditor(text: $content)
             .frame(height: 200)
         }
       }
       .scrollDismissesKeyboard(.interactively)
       .navigationTitle(isEditMode ? "編輯卡片" : "新增卡片")
+      .alert("無法儲存卡片", isPresented: Binding(
+        get: { saveErrorMessage != nil },
+        set: { if !$0 { saveErrorMessage = nil } }
+      )) {
+        Button("確定", role: .cancel) { saveErrorMessage = nil }
+      } message: {
+        Text(saveErrorMessage ?? "")
+      }
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
           Button("取消") { dismiss() }
         }
         ToolbarItem(placement: .confirmationAction) {
           Button("儲存") {
+            let trimmedTitle = sanitizedCardTitle(title)
+            guard !trimmedTitle.isEmpty else {
+              saveErrorMessage = "請先輸入單字名稱。"
+              return
+            }
+
+            if let duplicateMessage = duplicateValidationMessage(for: trimmedTitle) {
+              saveErrorMessage = duplicateMessage
+              return
+            }
+
             let cardToSync: Card?
             if let card = cardToEdit {
-              card.title = title
+              card.title = trimmedTitle
               card.content = content
               card.wordSet = selectedWordSet ?? wordSet
               cardToSync = card
             } else {
               let newCard = Card(
-                title: title,
+                title: trimmedTitle,
                 content: content,
                 wordSet: selectedWordSet ?? wordSet
               )
@@ -108,10 +128,11 @@ struct AddCardView: View {
               }
               dismiss()
             } catch {
+              saveErrorMessage = "儲存失敗，請稍後再試。"
               print("❌ Failed to save card: \(error.localizedDescription)")
             }
           }
-          .disabled(title.isEmpty)
+          .disabled(sanitizedCardTitle(title).isEmpty)
         }
       }
       .onAppear {
@@ -152,7 +173,7 @@ struct AddCardView: View {
     }
 
     let existingTitlesNormalized = Set(
-      targetSet.cards.map { $0.title.trimmingCharacters(in: .whitespaces).lowercased() }
+      targetSet.cards.map { normalizedCardTitle($0.title) }
     )
 
     let service = AIService(client: authService.getClient())
@@ -167,7 +188,7 @@ struct AddCardView: View {
       // 本機再過濾一次：與現有重複或同批內重複的都不插入
       var seenNormalized = existingTitlesNormalized
       let toInsert = items.filter { item in
-        let key = item.word.trimmingCharacters(in: .whitespaces).lowercased()
+        let key = normalizedCardTitle(item.word)
         guard !key.isEmpty, !seenNormalized.contains(key) else { return false }
         seenNormalized.insert(key)
         return true
@@ -181,7 +202,7 @@ struct AddCardView: View {
       var createdCards: [Card] = []
       for item in toInsert {
         let card = Card(
-          title: item.word.trimmingCharacters(in: .whitespaces),
+          title: sanitizedCardTitle(item.word),
           content: item.markdownContent,
           wordSet: targetSet
         )
@@ -209,5 +230,29 @@ struct AddCardView: View {
     } catch {
       aiErrorMessage = error.localizedDescription
     }
+  }
+
+  private func duplicateValidationMessage(for sanitizedTitle: String) -> String? {
+    guard let targetSet = selectedWordSet ?? wordSet else { return nil }
+
+    let normalizedInput = normalizedCardTitle(sanitizedTitle)
+    let editingCardId = cardToEdit?.id
+    let duplicate = targetSet.cards.first {
+      $0.id != editingCardId && normalizedCardTitle($0.title) == normalizedInput
+    }
+
+    guard let duplicate else { return nil }
+    return "此單字集內已經有「\(duplicate.title)」，請使用不同名稱。"
+  }
+
+  private func sanitizedCardTitle(_ raw: String) -> String {
+    raw
+      .components(separatedBy: .whitespacesAndNewlines)
+      .filter { !$0.isEmpty }
+      .joined(separator: " ")
+  }
+
+  private func normalizedCardTitle(_ raw: String) -> String {
+    sanitizedCardTitle(raw).lowercased()
   }
 }

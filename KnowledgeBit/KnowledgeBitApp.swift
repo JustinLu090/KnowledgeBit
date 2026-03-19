@@ -176,8 +176,12 @@ struct KnowledgeBitApp: App {
       }
       .animation(.easeInOut(duration: 0.2), value: authService.isLoggedIn)
       .onOpenURL { url in
-        if let wordSetId = Self.parseBattleURL(url) {
+        if let wordSetId = Self.parseWordSetURL(url) {
           pendingBattleOpenStore.setWordSetIdToOpen(wordSetId)
+          return
+        }
+        if let wordSetId = Self.parseBattleURL(url) {
+          pendingBattleOpenStore.setBattleWordSetIdToOpen(wordSetId)
           return
         }
         if let (code, _) = Self.parseInviteURL(url) {
@@ -225,6 +229,15 @@ struct KnowledgeBitApp: App {
 
 // MARK: - Deep Link 解析（供 onOpenURL 使用）
 private extension KnowledgeBitApp {
+  /// 解析 Widget 單字卡連結 knowledgebit://wordSet?wordSetId=XXX
+  static func parseWordSetURL(_ url: URL) -> UUID? {
+    guard url.scheme?.lowercased() == "knowledgebit",
+          url.host?.lowercased() == "wordset",
+          let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
+          let idStr = comps.queryItems?.first(where: { $0.name == "wordSetId" })?.value else { return nil }
+    return UUID(uuidString: idStr)
+  }
+
   /// 解析對戰地圖 Widget 連結 knowledgebit://battle?wordSetId=XXX
   static func parseBattleURL(_ url: URL) -> UUID? {
     guard url.scheme?.lowercased() == "knowledgebit",

@@ -6,6 +6,7 @@ import SwiftUI
 struct MultipleChoiceQuizView: View {
   @Environment(\.dismiss) private var dismiss
   @EnvironmentObject var energyStore: BattleEnergyStore
+  @EnvironmentObject private var pendingBattleOpenStore: PendingBattleOpenStore
   let wordSet: WordSet
   /// 若提供，測驗結束後可直接導向此對戰房間的戰略盤面
   let roomId: UUID?
@@ -27,6 +28,7 @@ struct MultipleChoiceQuizView: View {
   @State private var isFinished: Bool = false
   @State private var loadError: String? = nil
   @State private var hasCommittedKE: Bool = false
+  @State private var selectedChoice: String?
 
   /// 一題：顯示「定義」，選項是同一單字集裡的多個單字（title）。
   struct Question: Identifiable, Equatable {
@@ -36,37 +38,40 @@ struct MultipleChoiceQuizView: View {
     let choices: [String]     // 選項：多個 title
   }
 
+  private var progressValue: Double {
+    guard !questions.isEmpty else { return 0 }
+    return Double(currentIndex + (isFinished ? 1 : 0)) / Double(questions.count)
+  }
+
   var body: some View {
-    NavigationStack {
-      VStack(spacing: 20) {
-        if isFinished {
-          summaryView
-        } else if let err = loadError {
-          VStack(spacing: 12) {
-            Text("無法產生題目")
-              .font(.headline)
-            Text(err)
-              .font(.subheadline)
-              .foregroundStyle(.secondary)
-              .multilineTextAlignment(.center)
-          }
-          .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if currentIndex < questions.count {
-          quizCard(questions[currentIndex])
-        } else {
-          ProgressView()
+    VStack(spacing: 20) {
+      if isFinished {
+        summaryView
+      } else if let err = loadError {
+        VStack(spacing: 12) {
+          Text("無法產生題目")
+            .font(.headline)
+          Text(err)
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+      } else if currentIndex < questions.count {
+        quizCard(questions[currentIndex])
+      } else {
+        ProgressView()
       }
-      .padding(20)
-      .navigationTitle("對戰測驗")
-      .navigationBarTitleDisplayMode(.inline)
-      .toolbar {
-        ToolbarItem(placement: .cancellationAction) {
-          Button("結束") { finishQuiz() }
-        }
-      }
-      .onAppear { setupQuestions() }
     }
+    .padding(20)
+    .navigationTitle("對戰測驗")
+    .navigationBarTitleDisplayMode(.inline)
+    .toolbar {
+      ToolbarItem(placement: .cancellationAction) {
+        Button("結束") { finishQuiz() }
+      }
+    }
+    .onAppear { setupQuestions() }
   }
 
   // MARK: - 題目產生
@@ -138,39 +143,104 @@ struct MultipleChoiceQuizView: View {
 
   @ViewBuilder
   private func quizCard(_ q: Question) -> some View {
-    VStack(alignment: .leading, spacing: 16) {
-      Text("題目 \(currentIndex + 1) / \(questions.count)")
-        .font(.system(size: 14, weight: .semibold))
-        .foregroundStyle(.secondary)
+    ZStack {
+      LinearGradient(
+        colors: [
+          Color(.systemBackground),
+          Color.blue.opacity(0.05),
+          Color(.systemBackground)
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+      )
+      .ignoresSafeArea()
 
-      VStack(alignment: .leading, spacing: 6) {
-        Text("依照下列定義選出正確單字：")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-        Text(q.prompt)
-          .font(.title3.bold())
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
+      ScrollView(showsIndicators: false) {
+        VStack(alignment: .leading, spacing: 20) {
+          VStack(spacing: 16) {
+            HStack {
+              Text("題目 \(currentIndex + 1) / \(questions.count)")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(Color(.secondarySystemBackground), in: Capsule())
 
-      ForEach(q.choices, id: \.self) { choice in
-        Button {
-          handleAnswer(choice: choice, for: q)
-        } label: {
-          HStack {
-            Text(choice)
-              .font(.body)
-              .lineLimit(2)
-              .multilineTextAlignment(.leading)
-              .frame(maxWidth: .infinity, alignment: .leading)
+              Spacer()
+            }
+
+            ProgressView(value: progressValue)
+              .tint(.blue)
+              .scaleEffect(x: 1, y: 1.8, anchor: .center)
           }
-          .padding(14)
-          .background(Color(.secondarySystemGroupedBackground))
-          .cornerRadius(12)
-        }
-        .buttonStyle(.plain)
-      }
 
-      Spacer(minLength: 0)
+          VStack(alignment: .leading, spacing: 16) {
+            Text("定義題")
+              .font(.system(size: 13, weight: .bold))
+              .foregroundStyle(.blue)
+              .padding(.horizontal, 10)
+              .padding(.vertical, 6)
+              .background(Color.blue.opacity(0.12), in: Capsule())
+
+            VStack(alignment: .leading, spacing: 8) {
+              Text("依照下列定義選出正確單字")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.secondary)
+              Text(q.prompt)
+                .font(.system(size: 27, weight: .semibold))
+                .tracking(-0.4)
+                .lineSpacing(4)
+            }
+          }
+          .padding(24)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .background(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+              .fill(Color(.systemBackground))
+              .shadow(color: Color.black.opacity(0.05), radius: 20, x: 0, y: 10)
+          )
+
+          VStack(spacing: 12) {
+            ForEach(Array(q.choices.enumerated()), id: \.offset) { index, choice in
+              Button {
+                selectedChoice = choice
+                handleAnswer(choice: choice, for: q)
+              } label: {
+                HStack(spacing: 14) {
+                  ZStack {
+                    Circle()
+                      .fill(selectedChoice == choice ? Color.blue : Color(.tertiarySystemFill))
+                    Text(optionBadgeText(index))
+                      .font(.system(size: 14, weight: .bold))
+                      .foregroundStyle(selectedChoice == choice ? Color.white : Color.secondary)
+                  }
+                  .frame(width: 34, height: 34)
+
+                  Text(choice)
+                    .font(.system(size: 20, weight: .medium))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 18)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(.secondarySystemBackground))
+                .overlay(
+                  RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(selectedChoice == choice ? Color.blue.opacity(0.45) : Color.black.opacity(0.05), lineWidth: 1.5)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .shadow(color: Color.black.opacity(0.04), radius: 10, x: 0, y: 5)
+              }
+              .buttonStyle(.plain)
+            }
+          }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
+        .padding(.bottom, 24)
+      }
     }
   }
 
@@ -188,6 +258,7 @@ struct MultipleChoiceQuizView: View {
     if currentIndex + 1 < questions.count {
       currentIndex += 1
       lastStartTime = Date()
+      selectedChoice = nil
     } else {
       finishQuiz()
     }
@@ -199,44 +270,76 @@ struct MultipleChoiceQuizView: View {
   }
 
   private var summaryView: some View {
-    VStack(spacing: 16) {
-      Text("測驗完成")
-        .font(.title2.bold())
-      Text("本次獲得 KE：\(totalKE)")
-        .font(.headline)
+    ZStack {
+      LinearGradient(
+        colors: [
+          Color(.systemBackground),
+          Color.green.opacity(0.05),
+          Color(.systemBackground)
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+      )
+      .ignoresSafeArea()
 
-      HStack(spacing: 12) {
-        Button {
-          commitKEIfNeeded()
-          dismiss()
-        } label: {
-          Text("存入 KE 並返回")
-            .font(.system(size: 16, weight: .bold))
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(Color.blue.opacity(0.15), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+      VStack(spacing: 20) {
+        Spacer()
+
+        VStack(spacing: 14) {
+          Image(systemName: "checkmark.circle.fill")
+            .font(.system(size: 56))
+            .foregroundStyle(.green)
+
+          Text("測驗完成")
+            .font(.system(size: 30, weight: .bold))
+
+          Text("本次獲得 KE：\(totalKE)")
+            .font(.system(size: 22, weight: .semibold))
+            .foregroundStyle(.secondary)
         }
-        .buttonStyle(.plain)
+        .padding(28)
+        .frame(maxWidth: .infinity)
+        .background(
+          RoundedRectangle(cornerRadius: 28, style: .continuous)
+            .fill(Color(.systemBackground))
+            .shadow(color: Color.black.opacity(0.05), radius: 20, x: 0, y: 10)
+        )
 
-        if let roomId = roomId {
-          NavigationLink {
-            StrategicBattleView(roomId: roomId, wordSetID: wordSet.id, creatorId: creatorId, wordSetTitle: wordSet.title)
+        HStack(spacing: 12) {
+          Button {
+            commitKEIfNeeded()
+            dismiss()
           } label: {
-            Text("前往對戰模式")
+            Text("存入 KE 並返回")
               .font(.system(size: 16, weight: .bold))
               .frame(maxWidth: .infinity)
-              .padding(.vertical, 12)
-              .background(Color.green.opacity(0.15), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+              .padding(.vertical, 16)
+              .background(Color.blue.opacity(0.15), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
           }
           .buttonStyle(.plain)
-        }
-      }
 
-      Button("再測一次") {
-        commitKEIfNeeded()
-        setupQuestions()
+          if let roomId = roomId {
+            Button {
+              commitKEIfNeeded()
+              dismiss()
+              let targetRoomId = roomId
+              Task { @MainActor in
+                pendingBattleOpenStore.setBattleRoomIdToOpenForMap(targetRoomId)
+              }
+            } label: {
+              Text("前往對戰模式")
+                .font(.system(size: 16, weight: .bold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(Color.green.opacity(0.15), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            }
+            .buttonStyle(.plain)
+          }
+        }
+
+        Spacer()
       }
-      .padding(.top, 4)
+      .padding(20)
     }
   }
 
@@ -292,6 +395,16 @@ struct MultipleChoiceQuizView: View {
     }
 
     return ""
+  }
+
+  private func optionBadgeText(_ index: Int) -> String {
+    ["A", "B", "C", "D"][safe: index] ?? "\(index + 1)"
+  }
+}
+
+private extension Array {
+  subscript(safe index: Int) -> Element? {
+    indices.contains(index) ? self[index] : nil
   }
 }
 

@@ -13,10 +13,11 @@ struct BattleRoomView: View {
   /// 創辦人 = 藍隊；被邀請成員 = 紅隊。nil 時視為目前使用者為創辦人（藍隊）。
   let creatorId: UUID?
 
-  @State private var now: Date = Date()
-  @State private var timer: Timer? = nil
   @EnvironmentObject private var energyStore: BattleEnergyStore
   @EnvironmentObject private var authService: AuthService
+  @EnvironmentObject private var pendingBattleOpenStore: PendingBattleOpenStore
+
+  @State private var navigateToStrategicBattle: Bool = false
 
   /// 目前使用者是否為藍隊（創辦人）
   private var isBlueTeam: Bool {
@@ -31,90 +32,104 @@ struct BattleRoomView: View {
   private var battleStartDate: Date { startDate.addingTimeInterval(totalSeconds * 0.75) }
   private var battleEndDate: Date { startDate.addingTimeInterval(totalSeconds) }
 
-  private var isInBattlePhase: Bool { now >= battleStartDate && now < battleEndDate }
-  private var isFinished: Bool { now >= battleEndDate }
-
   var body: some View {
-    ScrollView {
-      VStack(spacing: 16) {
-        header
+    TimelineView(.periodic(from: .now, by: 1.0)) { context in
+      let now = context.date
+      let isInBattlePhase = now >= battleStartDate && now < battleEndDate
+      let isFinished = now >= battleEndDate
 
-        statusCard
+      ScrollView {
+        VStack(spacing: 16) {
+          header
 
-        if isFinished {
-        Text("本次對戰已結束")
-          .font(.headline)
-          .foregroundStyle(.secondary)
-      } else if isInBattlePhase {
-        VStack(spacing: 12) {
-          Text("對戰期倒數：\(formatTimeInterval(battleEndDate.timeIntervalSince(now)))")
-            .font(.title3.monospacedDigit())
-            .foregroundStyle(.red)
+          statusCard
 
-          NavigationLink {
-            StrategicBattleView(roomId: roomId, wordSetID: wordSetID, creatorId: creatorId, wordSetTitle: wordSetTitle)
-          } label: {
-            HStack {
-              Image(systemName: "swords")
-              Text("進入戰鬥")
-                .fontWeight(.bold)
-            }
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(Color.purple)
-            .foregroundStyle(.white)
-            .cornerRadius(12)
-          }
-          .padding(.horizontal)
-        }
-        .padding()
-      } else {
-        VStack(spacing: 12) {
-          Text("目前為準備期")
-            .font(.headline)
-          Text("對戰將在最後 1/4 期間開放")
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-          Text("距離開戰：\(formatTimeInterval(battleStartDate.timeIntervalSince(now)))")
-            .font(.title3.monospacedDigit())
-            .padding(.top, 4)
-
-          VStack(alignment: .leading, spacing: 8) {
-            Text("準備期測驗")
-              .font(.subheadline.weight(.semibold))
-            Text("透過選擇題測驗賺取 KE，之後在正式對戰中可用來佔領格子。")
-              .font(.caption)
+          if isFinished {
+            Text("本次對戰已結束")
+              .font(.headline)
               .foregroundStyle(.secondary)
+          } else if isInBattlePhase {
+            VStack(spacing: 12) {
+              Text("對戰期倒數：\(formatTimeInterval(battleEndDate.timeIntervalSince(now)))")
+                .font(.title3.monospacedDigit())
+                .foregroundStyle(.red)
 
-            NavigationLink {
-              BattlePrepQuizView(wordSetID: wordSetID, roomId: roomId, creatorId: creatorId)
-            } label: {
-              HStack {
-                Image(systemName: "bolt.circle")
-                Text("進行準備期選擇題測驗")
-                  .fontWeight(.semibold)
+              NavigationLink {
+                StrategicBattleView(roomId: roomId, wordSetID: wordSetID, creatorId: creatorId, wordSetTitle: wordSetTitle)
+              } label: {
+                HStack {
+                  Image(systemName: "flag.2.crossed.fill")
+                  Text("進入戰鬥")
+                    .fontWeight(.bold)
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color.purple)
+                .foregroundStyle(.white)
+                .cornerRadius(12)
               }
-              .frame(maxWidth: .infinity)
+              .padding(.horizontal)
+            }
+            .padding()
+          } else {
+            VStack(spacing: 12) {
+              Text("目前為準備期")
+                .font(.headline)
+              Text("對戰將在最後 1/4 期間開放")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+              Text("距離開戰：\(formatTimeInterval(battleStartDate.timeIntervalSince(now)))")
+                .font(.title3.monospacedDigit())
+                .padding(.top, 4)
+
+              VStack(alignment: .leading, spacing: 8) {
+                Text("準備期測驗")
+                  .font(.subheadline.weight(.semibold))
+                Text("透過選擇題測驗賺取 KE，之後在正式對戰中可用來佔領格子。")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+
+                NavigationLink {
+                  BattlePrepQuizView(wordSetID: wordSetID, roomId: roomId, creatorId: creatorId)
+                } label: {
+                  HStack {
+                    Image(systemName: "bolt.circle")
+                    Text("進行準備期選擇題測驗")
+                      .fontWeight(.semibold)
+                  }
+                  .frame(maxWidth: .infinity)
+                  .padding()
+                  .background(Color.blue.opacity(0.15))
+                  .foregroundStyle(.blue)
+                  .cornerRadius(12)
+                }
+              }
               .padding()
-              .background(Color.blue.opacity(0.15))
-              .foregroundStyle(.blue)
+              .background(Color(.secondarySystemGroupedBackground))
               .cornerRadius(12)
             }
+            .padding()
           }
-          .padding()
-          .background(Color(.secondarySystemGroupedBackground))
-          .cornerRadius(12)
         }
         .padding()
-        }
       }
-      .padding()
+      .scrollIndicators(.visible)
+      .navigationTitle("對戰房間")
+      .navigationBarTitleDisplayMode(.inline)
+      .navigationDestination(isPresented: $navigateToStrategicBattle) {
+        StrategicBattleView(
+          roomId: roomId,
+          wordSetID: wordSetID,
+          creatorId: creatorId,
+          wordSetTitle: wordSetTitle
+        )
+      }
+      .onChange(of: pendingBattleOpenStore.battleRoomIdToOpenForMap) { _, newValue in
+        guard let newValue, newValue == roomId else { return }
+        navigateToStrategicBattle = true
+        pendingBattleOpenStore.clearBattleRoomIdToOpenForMap()
+      }
     }
-    .scrollIndicators(.visible)
-    .navigationTitle("對戰房間")
-    .navigationBarTitleDisplayMode(.inline)
-    .onAppear { startTimer() }
-    .onDisappear { stopTimer() }
   }
 
   private var header: some View {
@@ -175,24 +190,16 @@ struct BattleRoomView: View {
     .cornerRadius(12)
   }
 
-  private func startTimer() {
-    stopTimer()
-    timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
-      now = Date()
-    }
-  }
-
-  private func stopTimer() {
-    timer?.invalidate()
-    timer = nil
-  }
-
   private func formatDate(_ date: Date) -> String {
+    Self.dateFormatter.string(from: date)
+  }
+
+  private static let dateFormatter: DateFormatter = {
     let f = DateFormatter()
     f.dateStyle = .medium
     f.timeStyle = .short
-    return f.string(from: date)
-  }
+    return f
+  }()
 
   private func formatTimeInterval(_ ti: TimeInterval) -> String {
     let seconds = max(0, Int(ti))

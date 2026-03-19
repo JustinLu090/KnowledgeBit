@@ -10,7 +10,7 @@ struct AchievementsView: View {
   
   var body: some View {
     NavigationStack {
-      StatisticsView()
+      LearningStatisticsView()
         .environmentObject(dailyQuestService)
         .onAppear {
           // 進入成就頁時確保昨日數據已寫入 DailyStats（若已跨日）

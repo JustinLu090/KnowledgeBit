@@ -13,13 +13,12 @@ struct LibraryView: View {
   var body: some View {
     NavigationStack {
       WordSetListView(currentUserId: authService.currentUserId)
-        .navigationTitle("單字集")
-        .navigationBarTitleDisplayMode(.large)
     }
     .task {
       await syncSharedWordSetsIfNeeded()
     }
     .onChange(of: pendingBattleOpenStore.wordSetIdToOpen) { _, id in
+      guard pendingBattleOpenStore.openKind == .wordSet else { return }
       guard let id = id else { return }
       fetchAndPresentWordSet(id: id)
     }

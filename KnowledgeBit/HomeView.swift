@@ -10,6 +10,7 @@ struct HomeView: View {
   @EnvironmentObject var taskService: TaskService
   
   @State private var showingAddCardSheet = false
+  @State private var showingAppGuide = false
   
   private let srsService = SRSService()
   
@@ -17,7 +18,7 @@ struct HomeView: View {
     NavigationStack {
       ScrollView {
         VStack(alignment: .leading, spacing: 24) {
-          HomeHeaderSection(showingAddCardSheet: $showingAddCardSheet)
+          HomeHeaderSection(showingAddCardSheet: $showingAddCardSheet, showingAppGuide: $showingAppGuide)
             .padding(.top, 12)
             .padding(.horizontal, 20)
           
@@ -30,9 +31,6 @@ struct HomeView: View {
           DailyQuestsView()
             .padding(.horizontal, 20)
           
-          DailyQuizButton()
-            .padding(.horizontal, 20)
-          
           // Bottom padding
           Spacer()
             .frame(height: 32)
@@ -41,6 +39,9 @@ struct HomeView: View {
       .background(Color(.systemGroupedBackground))
       .sheet(isPresented: $showingAddCardSheet) {
         AddCardView()
+      }
+      .fullScreenCover(isPresented: $showingAppGuide) {
+        AppGuideView()
       }
       .onAppear {
         // 更新到期卡片數量

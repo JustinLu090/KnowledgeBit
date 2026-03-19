@@ -189,7 +189,7 @@ struct QuizView: View {
     let calendar = Calendar.current
     let today = calendar.startOfDay(for: Date())
     let total = shuffledCards.count
-    let log = StudyLog(date: today, cardsReviewed: score, totalCards: total)
+    let log = StudyLog(date: today, cardsReviewed: score, totalCards: total, activityType: "flashcards")
     modelContext.insert(log)
     try? modelContext.save()
   }
