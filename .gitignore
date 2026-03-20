@@ -20,6 +20,9 @@ xcuserdata/
 # Swift Package Manager
 .build/
 .swiftpm/
+.spm/
+.derivedData/
+Logs/
 
 # macOS
 .DS_Store

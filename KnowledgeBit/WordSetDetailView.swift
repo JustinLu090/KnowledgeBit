@@ -102,6 +102,13 @@ struct WordSetDetailView: View {
           Image(systemName: "plus")
         }
 
+        NavigationLink {
+          LectureImportView(wordSet: wordSet)
+        } label: {
+          Image(systemName: "doc.text.viewfinder")
+        }
+        .help("匯入 PDF 講義，產生摘要與測驗")
+
         Button {
           AppGroup.sharedUserDefaults()?.set(wordSet.id.uuidString, forKey: AppGroup.Keys.widgetWordSetId)
           WidgetReloader.reloadAll()
@@ -256,6 +263,16 @@ struct WordSetDetailView: View {
     isGeneratingQuiz = true
     quizGenerateError = nil
     generatedQuestions = nil
+    quizGenerationTask?.cancel()
+    // 先讓 loading cover 真正顯示，再開始 AI 生成，避免提示畫面來不及渲染就被略過。
+    Task { @MainActor in
+      await Task.yield()
+      guard showingChoiceQuiz, isGeneratingQuiz else { return }
+      launchChoiceQuizGeneration()
+    }
+  }
+
+  private func launchChoiceQuizGeneration() {
     quizGenerationTask?.cancel()
     quizGenerationTask = Task {
       do {

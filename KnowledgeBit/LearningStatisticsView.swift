@@ -30,9 +30,11 @@ struct LearningStatisticsView: View {
     .background(Color(.systemGroupedBackground))
     .toolbar(.hidden, for: .navigationBar)
     .onAppear {
+      StatisticsManager.shared.flushYesterdayIfNeeded(modelContext: modelContext, dailyQuestService: dailyQuestService)
       viewModel.load(modelContext: modelContext, dailyQuestService: dailyQuestService)
     }
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+      StatisticsManager.shared.flushYesterdayIfNeeded(modelContext: modelContext, dailyQuestService: dailyQuestService)
       viewModel.load(modelContext: modelContext, dailyQuestService: dailyQuestService)
     }
   }

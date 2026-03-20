@@ -24,7 +24,19 @@ struct ChoiceQuizView: View {
 
   /// 將 sentence_with_blank 的 ___ 換成視覺空白
   private func displaySentence(_ raw: String) -> String {
-    raw.replacingOccurrences(of: "___", with: " ______ ")
+    let pattern = #"(?:_+\s*)+"#
+    guard let regex = try? NSRegularExpression(pattern: pattern) else {
+      return raw.replacingOccurrences(of: "___", with: "__________")
+    }
+
+    let range = NSRange(raw.startIndex..., in: raw)
+    let collapsed = regex.stringByReplacingMatches(
+      in: raw,
+      options: [],
+      range: range,
+      withTemplate: " __________ "
+    )
+    return collapsed.replacingOccurrences(of: "  ", with: " ")
   }
 
   private func optionsForCurrentQuestion() -> [String] {

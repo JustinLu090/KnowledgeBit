@@ -17,6 +17,7 @@ final class StatisticsManager {
   
   private let userDefaults: UserDefaults
   private let lastFlushDateKey = "statistics_last_flush_date"
+  private let questDateKey = "daily_quest_date"
   
   private init() {
     guard let shared = UserDefaults(suiteName: AppGroup.identifier) else {
@@ -39,26 +40,22 @@ final class StatisticsManager {
     return calendar.date(byAdding: .day, value: -offset, to: calendar.startOfDay(for: date)) ?? date
   }
   
-  /// 若已跨日，將「昨日」的 EXP/學習時長寫入 DailyStats（僅當上次 flush 是昨天時），再呼叫 refreshIfNewDay
+  /// 若 DailyQuestService 目前仍持有「昨天」的累積值，先寫入 DailyStats，再呼叫 refreshIfNewDay。
+  /// 這比只看 lastFlush 更穩，因為統計頁可能不是每天都被打開。
   func flushYesterdayIfNeeded(modelContext: ModelContext, dailyQuestService: DailyQuestService) {
     let today = todayStart()
-    guard let yesterday = calendar.date(byAdding: .day, value: -1, to: today) else { return }
-    let lastFlush = userDefaults.object(forKey: lastFlushDateKey) as? Date
+    let trackedQuestDate = (userDefaults.object(forKey: questDateKey) as? Date).map { calendar.startOfDay(for: $0) }
 
-    if let last = lastFlush, calendar.isDate(last, inSameDayAs: today) {
-      return
-    }
-    // 僅當「上次 flush 日」是昨天時，才把目前 UserDefaults 的數值視為昨日並寫入
-    if let last = lastFlush, calendar.isDate(last, inSameDayAs: yesterday) {
+    if let trackedDate = trackedQuestDate, trackedDate < today {
       let exp = dailyQuestService.todayExpGained
       let minutes = dailyQuestService.todayStudyMinutes
       let descriptor = FetchDescriptor<DailyStats>(
-        predicate: #Predicate<DailyStats> { $0.date == yesterday },
+        predicate: #Predicate<DailyStats> { $0.date == trackedDate },
         sortBy: [SortDescriptor(\.date)]
       )
       let existing = (try? modelContext.fetch(descriptor)) ?? []
       if existing.isEmpty {
-        modelContext.insert(DailyStats(date: yesterday, expGained: exp, studyMinutes: minutes))
+        modelContext.insert(DailyStats(date: trackedDate, expGained: exp, studyMinutes: minutes))
         try? modelContext.save()
       }
     }

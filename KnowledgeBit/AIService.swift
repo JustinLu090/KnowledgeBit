@@ -62,6 +62,77 @@ struct WordSetLanguagePayload: Encodable {
   let language: String
 }
 
+struct LectureAIResult: Decodable {
+  let summary: String
+  let flashcards: [LectureFlashcardItem]
+  let quiz: LectureQuizPayload
+}
+
+struct LectureFlashcardItem: Decodable {
+  let term: String
+  let definition: String
+}
+
+struct LectureQuizPayload: Decodable {
+  let multiple_choice: [LectureMCQItem]
+  let fill_in_blank: [LectureFillBlankItem]
+}
+
+struct LectureMCQItem: Decodable, Identifiable {
+  let question: String
+  let options: [String]
+  let correct_index: Int
+  let explanation: String
+
+  var id: String {
+    "\(question)|\(correct_index)"
+  }
+}
+
+struct LectureFillBlankItem: Decodable, Identifiable {
+  let sentence: String
+  let answer: String
+  let explanation: String
+
+  var id: String {
+    "\(sentence)|\(answer)"
+  }
+}
+
+enum LectureDifficulty: String, CaseIterable, Identifiable {
+  case easy
+  case medium
+  case hard
+
+  var id: String { rawValue }
+}
+
+enum LectureGenerateTask: String {
+  case all
+  case summary
+  case flashcards
+  case quiz
+}
+
+private struct GenerateLectureBody: Encodable {
+  let storage_path: String
+  let task: String?
+  let language: String?
+  let difficulty: String?
+  let max_flashcards: Int?
+  let max_multiple_choice: Int?
+  let max_fill_in_blank: Int?
+  let allow_async_job: Bool?
+}
+
+struct LectureJobRow: Decodable {
+  let id: UUID
+  let status: String
+  let error_message: String?
+  let created_at: Date
+  let updated_at: Date
+}
+
 @MainActor
 final class AIService {
   private let client: SupabaseClient
@@ -172,6 +243,106 @@ final class AIService {
     }
   }
 
+  /// 上傳講義 PDF 到 Supabase Storage（lectures bucket），並回傳 storage path。
+  /// Path 格式：<user-id>/lectures/<timestamp>-<filename>.pdf
+  func uploadLecturePDF(fileURL: URL, userId: UUID) async throws -> String {
+    let ext = fileURL.pathExtension.lowercased()
+    guard ext == "pdf" else {
+      throw AIServiceError.invalidLectureFile("目前僅支援 PDF 檔案")
+    }
+    let data = try Data(contentsOf: fileURL)
+    guard !data.isEmpty else {
+      throw AIServiceError.invalidLectureFile("檔案內容為空")
+    }
+    guard data.count <= 50 * 1024 * 1024 else {
+      throw AIServiceError.invalidLectureFile("PDF 超過 50MB，請先壓縮或拆分")
+    }
+
+    let safeName = fileURL.deletingPathExtension().lastPathComponent
+      .replacingOccurrences(of: "[^A-Za-z0-9_-]", with: "-", options: .regularExpression)
+      .prefix(80)
+    let timestamp = Int(Date().timeIntervalSince1970)
+    let path = "\(userId.uuidString.lowercased())/lectures/\(timestamp)-\(safeName).pdf"
+    _ = try await client.storage
+      .from("lectures")
+      .upload(path, data: data, options: FileOptions(contentType: "application/pdf", upsert: false))
+    return path
+  }
+
+  /// 使用檔名與二進位內容上傳 PDF（避免 fileImporter 的 URL 權限過期）。
+  func uploadLecturePDF(filename: String, data: Data, userId: UUID) async throws -> String {
+    guard !data.isEmpty else {
+      throw AIServiceError.invalidLectureFile("檔案內容為空")
+    }
+    guard data.count <= 50 * 1024 * 1024 else {
+      throw AIServiceError.invalidLectureFile("PDF 超過 50MB，請先壓縮或拆分")
+    }
+
+    let base = filename.hasSuffix(".pdf") ? String(filename.dropLast(4)) : filename
+    let safeName = base
+      .replacingOccurrences(of: "[^A-Za-z0-9_-]", with: "-", options: .regularExpression)
+      .prefix(80)
+    let timestamp = Int(Date().timeIntervalSince1970)
+    let path = "\(userId.uuidString.lowercased())/lectures/\(timestamp)-\(safeName).pdf"
+    _ = try await client.storage
+      .from("lectures")
+      .upload(path, data: data, options: FileOptions(contentType: "application/pdf", upsert: false))
+    return path
+  }
+
+  /// 根據已上傳的講義 PDF（storage_path）產生摘要、學習卡與測驗。
+  func generateLectureMaterials(
+    storagePath: String,
+    task: LectureGenerateTask = .all,
+    language: String? = nil,
+    difficulty: LectureDifficulty = .medium,
+    maxFlashcards: Int? = nil,
+    maxMultipleChoice: Int? = nil,
+    maxFillInBlank: Int? = nil,
+    allowAsyncJob: Bool? = nil
+  ) async throws -> LectureAIResult {
+    let path = storagePath.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !path.isEmpty else {
+      throw AIServiceError.invalidLectureFile("storage path 不可為空")
+    }
+    let body = GenerateLectureBody(
+      storage_path: path,
+      task: task.rawValue,
+      language: language?.trimmingCharacters(in: .whitespacesAndNewlines),
+      difficulty: difficulty.rawValue,
+      max_flashcards: maxFlashcards,
+      max_multiple_choice: maxMultipleChoice,
+      max_fill_in_blank: maxFillInBlank,
+      allow_async_job: allowAsyncJob
+    )
+    let options = FunctionInvokeOptions(body: body)
+
+    do {
+      return try await invokeLectureMaterials(body: body, fallbackOptions: options)
+    } catch {
+      print("[AIService] generateLectureMaterials failed: \(error)")
+      if let body = Self.extractResponseBody(from: error) { print("[AIService] Response body: \(body)") }
+      if let urlError = error as? URLError { throw AIServiceError.network(urlError) }
+      throw AIServiceError.invokeFailed(error)
+    }
+  }
+
+  /// 查詢講義處理 job 狀態（搭配 allowAsyncJob 的後續輪詢）。
+  func fetchLectureJob(id: UUID) async throws -> LectureJobRow? {
+    do {
+      let rows: [LectureJobRow] = try await client
+        .from("lecture_jobs")
+        .select("id,status,error_message,created_at,updated_at")
+        .eq("id", value: id)
+        .limit(1)
+        .execute()
+        .value
+      return rows.first
+    } catch {
+      throw AIServiceError.invokeFailed(error)
+    }
+  }
+
   /// 從 SDK 的 error 裡遞迴找出 Data 並轉成字串（用於印出 502/500 的 response body）
   private static func extractResponseBody(from error: Error) -> String? {
     func findData(_ subject: Any, depth: Int) -> Data? {
@@ -186,11 +357,81 @@ final class AIService {
     guard let data = findData(error, depth: 0), let s = String(data: data, encoding: .utf8) else { return nil }
     return s
   }
+
+  /// 優先使用明確 Authorization header 的 HTTP 呼叫，避免某些情境下 SDK invoke 帶到過期 JWT。
+  /// 若 HTTP 呼叫失敗，才 fallback 到 SDK invoke。
+  private func invokeLectureMaterials(
+    body: GenerateLectureBody,
+    fallbackOptions: FunctionInvokeOptions
+  ) async throws -> LectureAIResult {
+    do {
+      return try await invokeLectureMaterialsViaHTTP(body: body)
+    } catch {
+      print("[AIService] HTTP path failed, fallback to SDK invoke: \(error.localizedDescription)")
+      return try await client.functions.invoke("generate-from-lecture", options: fallbackOptions)
+    }
+  }
+
+  private func invokeLectureMaterialsViaHTTP(body: GenerateLectureBody) async throws -> LectureAIResult {
+    guard let host = SupabaseConfig.url.host else {
+      throw AIServiceError.invokeFailed(NSError(domain: "AIService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid Supabase URL host"]))
+    }
+    let functionHost = host.replacingOccurrences(of: ".supabase.co", with: ".functions.supabase.co")
+    guard let endpoint = URL(string: "https://\(functionHost)/generate-from-lecture") else {
+      throw AIServiceError.invokeFailed(NSError(domain: "AIService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid function endpoint"]))
+    }
+
+    var lastError: Error?
+    for attempt in 1...2 {
+      do {
+        let session = try await client.auth.session
+        let accessToken = session.accessToken
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(SupabaseConfig.anonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONEncoder().encode(body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+          throw AIServiceError.invokeFailed(NSError(domain: "AIService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid HTTP response"]))
+        }
+
+        if (200..<300).contains(http.statusCode) {
+          return try JSONDecoder().decode(LectureAIResult.self, from: data)
+        }
+
+        let bodyText = String(data: data, encoding: .utf8) ?? "(empty body)"
+        if http.statusCode == 401, attempt == 1 {
+          print("[AIService] HTTP 401 invalid JWT, refreshing session and retrying once.")
+          _ = try await client.auth.refreshSession()
+          continue
+        }
+        throw AIServiceError.invokeFailed(
+          NSError(
+            domain: "AIService",
+            code: http.statusCode,
+            userInfo: [NSLocalizedDescriptionKey: "Function HTTP \(http.statusCode): \(bodyText)"]
+          )
+        )
+      } catch {
+        lastError = error
+        if attempt == 1 {
+          // First failure may still be from stale session cache; refresh and retry once.
+          do { _ = try await client.auth.refreshSession() } catch {}
+          continue
+        }
+      }
+    }
+    throw lastError ?? AIServiceError.invokeFailed(NSError(domain: "AIService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unknown function invoke failure"]))
+  }
 }
 
 enum AIServiceError: LocalizedError {
   case emptyPrompt
   case insufficientCards
+  case invalidLectureFile(String)
   case network(URLError)
   case invokeFailed(Error)
 
@@ -200,6 +441,8 @@ enum AIServiceError: LocalizedError {
       return "請輸入主題或描述"
     case .insufficientCards:
       return "至少需要一張單字卡才能產生題目"
+    case .invalidLectureFile(let message):
+      return message
     case .network(let urlError):
       return "網路錯誤：\(urlError.localizedDescription)"
     case .invokeFailed(let error):

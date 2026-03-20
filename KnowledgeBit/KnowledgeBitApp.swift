@@ -207,7 +207,10 @@ struct KnowledgeBitApp: App {
     .modelContainer(sharedModelContainer)
     .onChange(of: scenePhase) { _, newPhase in
       if newPhase == .active {
-        dailyQuestService.refreshIfNewDay()
+        StatisticsManager.shared.flushYesterdayIfNeeded(
+          modelContext: sharedModelContainer.mainContext,
+          dailyQuestService: dailyQuestService
+        )
         // 回到前景時若已登入，延遲同步 profile（避免 nw_connection 未 ready）
         if authService.isLoggedIn {
           Task {
