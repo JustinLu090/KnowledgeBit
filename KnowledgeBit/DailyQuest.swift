@@ -87,10 +87,12 @@ class DailyQuestService: ObservableObject {
   private let allQuestIcons = ["clock.fill", "book.fill", "books.vertical.fill", "percent", "checkmark.circle.fill", "list.bullet.circle.fill", "bolt.fill"]
   
   init() {
-    guard let shared = UserDefaults(suiteName: AppGroup.identifier) else {
-      fatalError("App Group UserDefaults not available")
+    if let shared = UserDefaults(suiteName: AppGroup.identifier) {
+      self.userDefaults = shared
+    } else {
+      print("⚠️ [DailyQuest] App Group UserDefaults not available, falling back to standard")
+      self.userDefaults = .standard
     }
-    self.userDefaults = shared
     loadOrResetQuests()
   }
   
@@ -217,6 +219,11 @@ class DailyQuestService: ObservableObject {
     userDefaults.synchronize()
   }
 
+  /// 每次任務首次完成時呼叫，觸發成就系統
+  private func onQuestFirstCompleted() {
+    AchievementService.shared.recordDailyQuestCompleted()
+  }
+
   /// 通知 UI 更新（mutating 陣列內 struct 不會觸發 @Published）
   private func notifyQuestsDidChange() {
     if Thread.isMainThread {
@@ -247,6 +254,7 @@ class DailyQuestService: ObservableObject {
       
       if !wasCompleted && quests[index].isCompleted {
         experienceStore.addExp(delta: quests[index].rewardExp)
+        onQuestFirstCompleted()
         print("✅ [Quest] 獲得 30 經驗值 - 獲得 \(quests[index].rewardExp) EXP")
       }
     }
@@ -267,6 +275,7 @@ class DailyQuestService: ObservableObject {
       if !wasCompleted && quests[index].isCompleted {
         experienceStore.addExp(delta: quests[index].rewardExp)
         recordExpGainedToday(quests[index].rewardExp, experienceStore: experienceStore)
+        onQuestFirstCompleted()
         print("✅ [Quest] 學習時長 5 分鐘 - 獲得 \(quests[index].rewardExp) EXP")
       }
     }
@@ -289,6 +298,7 @@ class DailyQuestService: ObservableObject {
       if !wasCompleted && quests[index].isCompleted {
         experienceStore.addExp(delta: quests[index].rewardExp)
         recordExpGainedToday(quests[index].rewardExp, experienceStore: experienceStore)
+        onQuestFirstCompleted()
         print("✅ [Quest] \(title) - 獲得 \(quests[index].rewardExp) EXP")
       }
     }
@@ -309,6 +319,7 @@ class DailyQuestService: ObservableObject {
       if !wasCompleted && quests[index].isCompleted {
         experienceStore.addExp(delta: quests[index].rewardExp)
         recordExpGainedToday(quests[index].rewardExp, experienceStore: experienceStore)
+        onQuestFirstCompleted()
         print("✅ [Quest] 單字集複習答對率超過 90% - 獲得 \(quests[index].rewardExp) EXP")
       }
     }
@@ -323,6 +334,7 @@ class DailyQuestService: ObservableObject {
       if !wasCompleted && quests[index].isCompleted {
         experienceStore.addExp(delta: quests[index].rewardExp)
         recordExpGainedToday(quests[index].rewardExp, experienceStore: experienceStore)
+        onQuestFirstCompleted()
         print("✅ [Quest] 單字集複習全對 - 獲得 \(quests[index].rewardExp) EXP")
       }
     }
@@ -337,6 +349,7 @@ class DailyQuestService: ObservableObject {
       if !wasCompleted && quests[index].isCompleted {
         experienceStore.addExp(delta: quests[index].rewardExp)
         recordExpGainedToday(quests[index].rewardExp, experienceStore: experienceStore)
+        onQuestFirstCompleted()
         print("✅ [Quest] 選擇題測驗全對 - 獲得 \(quests[index].rewardExp) EXP")
       }
     }
@@ -352,6 +365,7 @@ class DailyQuestService: ObservableObject {
       
       if !wasCompleted && quests[index].isCompleted, let store = experienceStore {
         store.addExp(delta: quests[index].rewardExp)
+        onQuestFirstCompleted()
         print("✅ [Quest] \(quests[index].title) - 獲得 \(quests[index].rewardExp) EXP")
       }
     }

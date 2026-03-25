@@ -13,10 +13,12 @@ class TaskService: ObservableObject {
   @Published var todayReviewCount: Int = 0
   
   init() {
-    guard let sharedDefaults = UserDefaults(suiteName: AppGroup.identifier) else {
-      fatalError("無法取得 App Group UserDefaults")
+    if let sharedDefaults = UserDefaults(suiteName: AppGroup.identifier) {
+      self.userDefaults = sharedDefaults
+    } else {
+      print("⚠️ [Task] 無法取得 App Group UserDefaults，回退到標準 UserDefaults")
+      self.userDefaults = .standard
     }
-    self.userDefaults = sharedDefaults
     
     // 檢查並重置任務（如果日期改變）
     checkAndResetTasksIfNeeded()
@@ -40,12 +42,16 @@ class TaskService: ObservableObject {
       if !calendar.isDate(lastReviewDay, inSameDayAs: today) {
         userDefaults.removeObject(forKey: "task_review_done_date")
         userDefaults.removeObject(forKey: "today_review_count")
+        #if DEBUG
         print("🔄 [Task] 重置複習任務")
+        #endif
       }
-      
+
       if !calendar.isDate(lastQuizDay, inSameDayAs: today) {
         userDefaults.removeObject(forKey: "task_quiz_done_date")
+        #if DEBUG
         print("🔄 [Task] 重置測驗任務")
+        #endif
       }
     }
   }
@@ -92,7 +98,9 @@ class TaskService: ObservableObject {
     userDefaults.set(today, forKey: "task_review_done_date")
     reviewTaskDone = true
     
+    #if DEBUG
     print("✅ [Task] 完成複習任務（無 EXP）")
+    #endif
     return true
   }
   
@@ -112,8 +120,13 @@ class TaskService: ObservableObject {
     
     // 給予 EXP
     experienceStore.addExp(delta: 20)
-    
+
+    // 記錄成就進度
+    AchievementService.shared.recordQuizCompleted()
+
+    #if DEBUG
     print("✅ [Task] 完成測驗任務！獲得 20 EXP")
+    #endif
     return true
   }
   
@@ -121,6 +134,9 @@ class TaskService: ObservableObject {
   func incrementReviewCount() {
     todayReviewCount += 1
     userDefaults.set(todayReviewCount, forKey: "today_review_count")
+    AchievementService.shared.recordReviewCompleted()
+    #if DEBUG
     print("📊 [Task] 今日複習數量: \(todayReviewCount)")
+    #endif
   }
 }

@@ -406,7 +406,7 @@ struct StudyHeatmapView: View {
     guard !days.isEmpty else { return [] }
     
     // Get the first day of the month
-    let firstDay = days.first!
+    guard let firstDay = days.first else { return [] }
     let firstDayDate = firstDay.date
     
     // Get the weekday of the first day (1 = Sunday, 2 = Monday, ..., 7 = Saturday)
@@ -453,9 +453,8 @@ struct StudyHeatmapView: View {
             currentWeek.append(HeatmapDay(date: placeholderDate, count: 0, isEmpty: true))
           }
         }
-      } else {
+      } else if let lastDay = days.last {
         // Fallback: use simple date addition
-        let lastDay = days.last!
         var dayOffset = 1
         while currentWeek.count < 7 {
           if let placeholderDate = calendar.date(byAdding: .day, value: dayOffset, to: lastDay.date) {

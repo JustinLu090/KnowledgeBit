@@ -11,10 +11,12 @@ class SRSService {
   private let userDefaults: UserDefaults
   
   init() {
-    guard let sharedDefaults = UserDefaults(suiteName: AppGroup.identifier) else {
-      fatalError("無法取得 App Group UserDefaults")
+    if let sharedDefaults = UserDefaults(suiteName: AppGroup.identifier) {
+      self.userDefaults = sharedDefaults
+    } else {
+      print("⚠️ [SRS] 無法取得 App Group UserDefaults，回退到標準 UserDefaults")
+      self.userDefaults = .standard
     }
-    self.userDefaults = sharedDefaults
   }
   
   // MARK: - SRS 間隔設定

@@ -20,10 +20,12 @@ final class StatisticsManager {
   private let questDateKey = "daily_quest_date"
   
   private init() {
-    guard let shared = UserDefaults(suiteName: AppGroup.identifier) else {
-      fatalError("App Group UserDefaults not available")
+    if let shared = UserDefaults(suiteName: AppGroup.identifier) {
+      self.userDefaults = shared
+    } else {
+      print("⚠️ [Statistics] App Group UserDefaults not available, falling back to standard")
+      self.userDefaults = .standard
     }
-    self.userDefaults = shared
   }
   
   private var calendar: Calendar { .current }
@@ -53,10 +55,20 @@ final class StatisticsManager {
         predicate: #Predicate<DailyStats> { $0.date == trackedDate },
         sortBy: [SortDescriptor(\.date)]
       )
-      let existing = (try? modelContext.fetch(descriptor)) ?? []
+      let existing: [DailyStats]
+      do {
+        existing = try modelContext.fetch(descriptor)
+      } catch {
+        print("❌ [Statistics] flushToSwiftData fetch 失敗: \(error.localizedDescription)")
+        existing = []
+      }
       if existing.isEmpty {
         modelContext.insert(DailyStats(date: trackedDate, expGained: exp, studyMinutes: minutes))
-        try? modelContext.save()
+        do {
+          try modelContext.save()
+        } catch {
+          print("❌ [Statistics] flushToSwiftData save 失敗: \(error.localizedDescription)")
+        }
       }
     }
 
@@ -75,7 +87,13 @@ final class StatisticsManager {
       sortBy: [SortDescriptor(\.date)]
     )
     weekDescriptor.fetchLimit = 7
-    let weekStats = (try? modelContext.fetch(weekDescriptor)) ?? []
+    let weekStats: [DailyStats]
+    do {
+      weekStats = try modelContext.fetch(weekDescriptor)
+    } catch {
+      print("❌ [Statistics] weeklyDailyExp fetch 失敗: \(error.localizedDescription)")
+      weekStats = []
+    }
     let statsByDay = Dictionary(uniqueKeysWithValues: weekStats.map { (calendar.startOfDay(for: $0.date), $0) })
 
     var items: [DayExpItem] = []
@@ -108,7 +126,13 @@ final class StatisticsManager {
       sortBy: [SortDescriptor(\.date)]
     )
     weekDescriptor.fetchLimit = 7
-    let weekStats = (try? modelContext.fetch(weekDescriptor)) ?? []
+    let weekStats: [DailyStats]
+    do {
+      weekStats = try modelContext.fetch(weekDescriptor)
+    } catch {
+      print("❌ [Statistics] weeklyTotalStudyMinutes fetch 失敗: \(error.localizedDescription)")
+      weekStats = []
+    }
     let minutesByDay = Dictionary(uniqueKeysWithValues: weekStats.map { (calendar.startOfDay(for: $0.date), $0.studyMinutes) })
 
     var total = 0
@@ -138,7 +162,13 @@ final class StatisticsManager {
         && log.totalCards > 0
         && log.activityType == "multipleChoiceQuiz"
     }
-    let logs = (try? modelContext.fetch(descriptor)) ?? []
+    let logs: [StudyLog]
+    do {
+      logs = try modelContext.fetch(descriptor)
+    } catch {
+      print("❌ [Statistics] weeklyAverageAccuracy fetch 失敗: \(error.localizedDescription)")
+      logs = []
+    }
     let totalCorrect = logs.reduce(0) { $0 + $1.cardsReviewed }
     let totalCards = logs.reduce(0) { $0 + $1.totalCards }
     guard totalCards > 0 else { return nil }

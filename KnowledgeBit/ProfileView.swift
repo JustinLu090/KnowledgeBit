@@ -42,10 +42,9 @@ struct ProfileView: View {
         SettingsView()
       }
       .sheet(isPresented: $showingAchievementsSheet) {
-        NavigationStack {
-          LearningStatisticsView(showsCloseButton: true)
-            .environmentObject(dailyQuestService)
-        }
+        AchievementsView()
+          .environmentObject(experienceStore)
+          .environmentObject(dailyQuestService)
       }
       .onAppear {
         let currentProfile = userProfiles.first { $0.userId == authService.currentUserId }
@@ -138,12 +137,12 @@ struct ProfileView: View {
         showingAchievementsSheet = true
       }) {
         HStack(spacing: 16) {
-          Image(systemName: "chart.bar.fill")
+          Image(systemName: "trophy.fill")
             .font(.system(size: 20))
             .foregroundStyle(.blue)
             .frame(width: 30)
-          
-          Text("查看成就")
+
+          Text("成就徽章")
             .font(.system(size: 16))
             .foregroundStyle(.primary)
           

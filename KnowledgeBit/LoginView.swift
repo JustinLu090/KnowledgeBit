@@ -130,7 +130,7 @@ struct LoginView: View {
       GIDSignIn.sharedInstance.configuration = config
       
       // 使用 GIDSignIn.sharedInstance.signIn 取得 idToken 和 accessToken
-      // 注意：使用 iOS Client ID (275005599081-ujeurl6h4jhjvmss6uh8pm1b379sa9k9)
+      // 注意：使用 iOS Client ID（設定於 Info.plist CFBundleURLSchemes）
       let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: rootViewController)
       
       // 取得 idToken 和 accessToken

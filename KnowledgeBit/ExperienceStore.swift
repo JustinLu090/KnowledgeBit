@@ -30,52 +30,67 @@ class ExperienceStore: ObservableObject {
       if Thread.isMainThread {
         userDefaults.set(level, forKey: AppGroup.Keys.level)
         userDefaults.synchronize()
+        #if DEBUG
         print("📊 [EXP] Level 更新: \(level)")
+        #endif
       } else {
         DispatchQueue.main.async { [weak self] in
           guard let self = self else { return }
           self.userDefaults.set(self.level, forKey: AppGroup.Keys.level)
           self.userDefaults.synchronize()
+          #if DEBUG
           print("📊 [EXP] Level 更新: \(self.level)")
+          #endif
         }
       }
     }
   }
-  
+
   @Published var exp: Int {
     didSet {
       if Thread.isMainThread {
         userDefaults.set(exp, forKey: AppGroup.Keys.exp)
         userDefaults.synchronize()
+        #if DEBUG
         print("📊 [EXP] EXP 更新: \(exp)")
+        #endif
       } else {
         DispatchQueue.main.async { [weak self] in
           guard let self = self else { return }
           self.userDefaults.set(self.exp, forKey: AppGroup.Keys.exp)
           self.userDefaults.synchronize()
+          #if DEBUG
           print("📊 [EXP] EXP 更新: \(self.exp)")
+          #endif
         }
       }
     }
   }
-  
+
   @Published var expToNext: Int {
     didSet {
       if Thread.isMainThread {
         userDefaults.set(expToNext, forKey: AppGroup.Keys.expToNext)
         userDefaults.synchronize()
+        #if DEBUG
         print("📊 [EXP] expToNext 更新: \(expToNext)")
+        #endif
       } else {
         DispatchQueue.main.async { [weak self] in
           guard let self = self else { return }
           self.userDefaults.set(self.expToNext, forKey: AppGroup.Keys.expToNext)
           self.userDefaults.synchronize()
+          #if DEBUG
           print("📊 [EXP] expToNext 更新: \(self.expToNext)")
+          #endif
         }
       }
     }
   }
   
+  /// 本週累積 EXP（週一重置），用於好友排行榜
+  private(set) var weeklyExp: Int = 0
+
   // 計算升級所需 EXP 的函數（可自訂曲線）
   // 使用 static 方法，避免在初始化時需要使用 self
   private static func calculateExpToNext(for level: Int) -> Int {
@@ -89,17 +104,30 @@ class ExperienceStore: ObservableObject {
   
   // 初始化：從 App Group UserDefaults 讀取或使用預設值
   init() {
-    guard let sharedDefaults = UserDefaults(suiteName: AppGroup.identifier) else {
-      fatalError("無法取得 App Group UserDefaults")
+    if let sharedDefaults = UserDefaults(suiteName: AppGroup.identifier) {
+      self.userDefaults = sharedDefaults
+    } else {
+      print("⚠️ [EXP] 無法取得 App Group UserDefaults，回退到標準 UserDefaults")
+      self.userDefaults = .standard
     }
-    
-    self.userDefaults = sharedDefaults
     
     // 讀取儲存的值，若無則使用預設值
     let savedLevel = max(userDefaults.integer(forKey: AppGroup.Keys.level), 1) // 至少為 1
     let savedExp = max(userDefaults.integer(forKey: AppGroup.Keys.exp), 0) // 至少為 0
     let savedExpToNext = userDefaults.integer(forKey: AppGroup.Keys.expToNext)
-    
+
+    // 週 EXP：若跨週則重置
+    let calendar = Calendar.current
+    let weekStart = calendar.dateInterval(of: .weekOfYear, for: Date())?.start ?? Date()
+    if let resetDate = userDefaults.object(forKey: AppGroup.Keys.weeklyExpResetDate) as? Date,
+       calendar.isDate(resetDate, equalTo: weekStart, toGranularity: .weekOfYear) {
+      self.weeklyExp = max(userDefaults.integer(forKey: AppGroup.Keys.weeklyExp), 0)
+    } else {
+      self.weeklyExp = 0
+      userDefaults.set(0, forKey: AppGroup.Keys.weeklyExp)
+      userDefaults.set(weekStart, forKey: AppGroup.Keys.weeklyExpResetDate)
+    }
+
     // 初始化 stored properties
     self.level = savedLevel
     self.exp = savedExp
@@ -114,7 +142,9 @@ class ExperienceStore: ObservableObject {
       userDefaults.set(calculatedExpToNext, forKey: AppGroup.Keys.expToNext)
     }
     
+    #if DEBUG
     print("📊 [EXP] 初始化完成 - Level: \(level), EXP: \(exp)/\(expToNext)")
+    #endif
   }
   
   // 增加經驗值
@@ -130,6 +160,8 @@ class ExperienceStore: ObservableObject {
     
     // 增加 EXP
     exp += delta
+    weeklyExp += delta
+    userDefaults.set(weeklyExp, forKey: AppGroup.Keys.weeklyExp)
     
     // 檢查是否需要升級
     while exp >= expToNext {
@@ -140,15 +172,18 @@ class ExperienceStore: ObservableObject {
       // 計算下一級所需 EXP
       expToNext = ExperienceStore.calculateExpToNext(for: level)
       
+      #if DEBUG
       print("🎉 [EXP] 升級！新等級: \(level), 剩餘 EXP: \(exp), 下一級需要: \(expToNext)")
+      #endif
     }
-    
-    // Debug 輸出
+
+    #if DEBUG
     if oldLevel != level {
       print("📈 [EXP] 升級！Level \(oldLevel) → \(level), EXP: \(oldExp) → \(exp)/\(expToNext)")
     } else {
       print("📈 [EXP] 獲得 \(delta) EXP, 當前: \(exp)/\(expToNext) (Level \(level))")
     }
+    #endif
     
     // 統一觸發 Widget 刷新（只在 addExp 完成後刷新一次，避免重複）
     // 確保在主線程執行
@@ -227,11 +262,13 @@ class ExperienceStore: ObservableObject {
           authService.saveExpToAppGroup(level: level, exp: exp, expToNext: expToNext, shouldReloadWidget: false)
         }
         
+        #if DEBUG
         if oldLevel != level || oldExp != exp {
           print("✅ [Cloud Load] 已從雲端載入並更新 - Level: \(oldLevel) → \(level), EXP: \(oldExp) → \(exp)")
         } else {
           print("✅ [Cloud Load] 雲端資料與本地一致 - Level: \(level), EXP: \(exp)")
         }
+        #endif
         
         // 在資料同步完成後，統一觸發一次 Widget 刷新
         await MainActor.run {
@@ -265,13 +302,11 @@ class ExperienceStore: ObservableObject {
         let display_name: String
         let level: Int
         let current_exp: Int
+        let weekly_exp: Int
         let updated_at: Date
-        
+
         enum CodingKeys: String, CodingKey {
-          case display_name
-          case level
-          case current_exp
-          case updated_at
+          case display_name, level, current_exp, weekly_exp, updated_at
         }
       }
       struct ProfileInsert: Encodable {
@@ -279,14 +314,11 @@ class ExperienceStore: ObservableObject {
         let display_name: String
         let level: Int
         let current_exp: Int
+        let weekly_exp: Int
         let updated_at: Date
-        
+
         enum CodingKeys: String, CodingKey {
-          case user_id
-          case display_name
-          case level
-          case current_exp
-          case updated_at
+          case user_id, display_name, level, current_exp, weekly_exp, updated_at
         }
       }
       let insertPayload = ProfileInsert(
@@ -294,6 +326,7 @@ class ExperienceStore: ObservableObject {
         display_name: displayName,
         level: level,
         current_exp: exp,
+        weekly_exp: weeklyExp,
         updated_at: Date()
       )
       do {
@@ -303,6 +336,7 @@ class ExperienceStore: ObservableObject {
           display_name: displayName,
           level: level,
           current_exp: exp,
+          weekly_exp: weeklyExp,
           updated_at: Date()
         )
         try await client
@@ -311,7 +345,9 @@ class ExperienceStore: ObservableObject {
           .eq(AppGroup.SupabaseFields.userId, value: userId)
           .execute()
       }
+      #if DEBUG
       print("✅ [Cloud Sync] 成功同步等級與經驗值到雲端 - Level: \(level), EXP: \(exp)")
+      #endif
       
       // 同步成功後，將資料寫入 App Group（供 Widget 讀取）
       // 使用批次同步，不立即刷新（因為 addExp 已經會觸發刷新）

@@ -225,8 +225,47 @@ struct KnowledgeBitApp: App {
             }
           }
         }
+        // 更新通知 badge 與連勝提醒
+        refreshNotifications()
+      } else if newPhase == .background {
+        // 進入背景時排程連勝風險提醒（今日尚未學習才排）
+        refreshStreakReminder()
       }
     }
+  }
+}
+
+// MARK: - Notification Helpers
+
+private extension KnowledgeBitApp {
+  /// 更新 badge 數量，若每日提醒已開啟則重新排程（含最新到期數）
+  func refreshNotifications() {
+    let dailyEnabled = UserDefaults.standard.bool(forKey: "notif_daily_enabled")
+    let now = Date()
+    let dueCount = (try? sharedModelContainer.mainContext.fetch(
+      FetchDescriptor<Card>(predicate: #Predicate { $0.dueAt <= now })
+    ))?.count ?? 0
+
+    NotificationManager.shared.updateBadge(dueCount: dueCount)
+
+    if dailyEnabled {
+      let hour   = UserDefaults.standard.integer(forKey: "notif_daily_hour")
+      let minute = UserDefaults.standard.integer(forKey: "notif_daily_minute")
+      let h = UserDefaults.standard.object(forKey: "notif_daily_hour") == nil ? 20 : hour
+      NotificationManager.shared.scheduleDailyStudyReminder(hour: h, minute: minute, dueCount: dueCount)
+    }
+  }
+
+  /// 若連勝提醒已開啟，排程今日 18:00 提醒（今日已學習則跳過）
+  func refreshStreakReminder() {
+    guard UserDefaults.standard.bool(forKey: "notif_streak_enabled") else { return }
+    let logs = (try? sharedModelContainer.mainContext.fetch(
+      FetchDescriptor<StudyLog>(sortBy: [SortDescriptor(\.date, order: .reverse)])
+    )) ?? []
+    let studiedToday = logs.first.map { Calendar.current.isDateInToday($0.date) } ?? false
+    guard !studiedToday else { return }
+    let streak = logs.currentStreak()
+    NotificationManager.shared.scheduleStreakRiskReminder(currentStreak: streak)
   }
 }
 
@@ -260,7 +299,8 @@ private extension KnowledgeBitApp {
     let isAppScheme = scheme == InviteConstants.urlScheme && host == "join"
     guard isWeb || isAppScheme else { return nil }
     let code = url.lastPathComponent.trimmingCharacters(in: .whitespaces)
-    guard !code.isEmpty, code.count <= 32 else { return nil }
+    guard !code.isEmpty, code.count <= 32,
+          code.range(of: "^[a-zA-Z0-9_\\-]+$", options: .regularExpression) != nil else { return nil }
     return (code, nil)
   }
 }

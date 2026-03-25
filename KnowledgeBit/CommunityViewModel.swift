@@ -12,6 +12,8 @@ final class CommunityViewModel: ObservableObject {
   @Published private(set) var sentRequestReceiverIds: Set<UUID> = []
   @Published private(set) var searchResults: [SearchUserItem] = []
   @Published private(set) var isLoading = false
+  @Published private(set) var leaderboard: [LeaderboardEntry] = []
+  @Published private(set) var leaderboardLoading = false
   @Published var errorMessage: String?
   @Published var searchQuery = ""
 
@@ -83,10 +85,28 @@ final class CommunityViewModel: ObservableObject {
       await loadFriends(authService: authService)
       await loadPendingRequests(authService: authService)
       await loadInviteCode(authService: authService)
+      await loadLeaderboard(authService: authService)
     }
     refreshTask = task
     defer { refreshTask = nil }
     await task.value
+  }
+
+  // MARK: - 排行榜
+
+  func loadLeaderboard(authService: AuthService) async {
+    guard let currentUserId = authService.currentUserId else { return }
+    leaderboardLoading = true
+    defer { leaderboardLoading = false }
+    do {
+      let service = LeaderboardService(authService: authService)
+      leaderboard = try await service.fetchLeaderboard(currentUserId: currentUserId, friends: friends)
+      // 更新好友數量到成就系統
+      AchievementService.shared.recordFriendCount(friends.count)
+    } catch {
+      if Self.isCancelledError(error) { return }
+      print("⚠️ [Community] loadLeaderboard 失敗: \(error)")
+    }
   }
 
   /// 載入目前使用者的 invite_code 並產生 QR 圖

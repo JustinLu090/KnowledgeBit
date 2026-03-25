@@ -94,7 +94,7 @@ final class FriendService {
     let friendships: [FriendshipRecord] = try await client
       .from("friendships")
       .select()
-      .or("user_id.eq.\"\(currentUserId.uuidString)\",friend_id.eq.\"\(currentUserId.uuidString)\"")
+      .or("user_id.eq.\(currentUserId.uuidString),friend_id.eq.\(currentUserId.uuidString)")
       .execute()
       .value
 

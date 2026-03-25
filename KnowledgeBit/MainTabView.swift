@@ -7,10 +7,13 @@ import SwiftData
 struct MainTabView: View {
   @Environment(\.modelContext) private var modelContext
   @EnvironmentObject var authService: AuthService
+  @EnvironmentObject var experienceStore: ExperienceStore
   @EnvironmentObject var dailyQuestService: DailyQuestService
   @EnvironmentObject var pendingInviteStore: PendingInviteStore
   @EnvironmentObject var pendingBattleOpenStore: PendingBattleOpenStore
   @StateObject private var communityViewModel = CommunityViewModel()
+  @ObservedObject private var achievementService = AchievementService.shared
+  @Query(sort: \StudyLog.date, order: .reverse) private var studyLogs: [StudyLog]
   @State private var selectedTab = 0
   
   init() {
@@ -68,6 +71,15 @@ struct MainTabView: View {
         .tag(4)
     }
     .tint(.blue)
+    .overlay {
+      if let unlocked = achievementService.newlyUnlocked {
+        AchievementUnlockOverlay(achievement: unlocked) {
+          achievementService.dismissNewlyUnlocked()
+        }
+        .zIndex(999)
+        .transition(.opacity)
+      }
+    }
     .onChange(of: pendingBattleOpenStore.wordSetIdToOpen) { _, new in
       guard new != nil else { return }
       switch pendingBattleOpenStore.openKind {
@@ -84,6 +96,14 @@ struct MainTabView: View {
       StatisticsManager.shared.flushYesterdayIfNeeded(modelContext: modelContext, dailyQuestService: dailyQuestService)
       // 更新社群頁好友請求數量（badge）
       Task { await communityViewModel.refresh(authService: authService) }
+      // 評估成就
+      let streak = studyLogs.currentStreak()
+      AchievementService.shared.evaluate(level: experienceStore.level, streak: streak)
+    }
+    .task {
+      // 首次進入時評估成就
+      let streak = studyLogs.currentStreak()
+      AchievementService.shared.evaluate(level: experienceStore.level, streak: streak)
     }
   }
 

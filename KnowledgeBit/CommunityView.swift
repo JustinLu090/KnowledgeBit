@@ -37,6 +37,12 @@ struct CommunityView: View {
               pendingRequestsSection
             }
 
+            // 好友排行榜
+            LeaderboardView(
+              entries: viewModel.leaderboard,
+              isLoading: viewModel.leaderboardLoading
+            )
+
             // 好友列表
             friendsSection
           }

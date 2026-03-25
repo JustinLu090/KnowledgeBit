@@ -29,6 +29,8 @@ enum AppGroup {
     static let level = "userLevel"
     static let exp = "userExp"
     static let expToNext = "expToNext"
+    static let weeklyExp = "userWeeklyExp"
+    static let weeklyExpResetDate = "userWeeklyExpResetDate"
     
     // Widget 相關
     static let todayDueCount = "today_due_count"

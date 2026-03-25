@@ -9,18 +9,15 @@ final class CardWordSetSyncService {
   private let client: SupabaseClient
   private let currentUserId: UUID
 
-  init(authService: AuthService) {
-    self.client = authService.getClient()
-    guard let userId = authService.currentUserId else {
-      fatalError("CardWordSetSyncService requires a logged-in user")
-    }
+  private init(client: SupabaseClient, userId: UUID) {
+    self.client = client
     self.currentUserId = userId
   }
 
   /// 未登入時回傳 nil，呼叫端應跳過 sync
   static func createIfLoggedIn(authService: AuthService) -> CardWordSetSyncService? {
-    guard authService.currentUserId != nil else { return nil }
-    return CardWordSetSyncService(authService: authService)
+    guard let userId = authService.currentUserId else { return nil }
+    return CardWordSetSyncService(client: authService.getClient(), userId: userId)
   }
 
   // MARK: - word_sets
@@ -68,7 +65,11 @@ final class CardWordSetSyncService {
   }
 
   func deleteWordSet(id: UUID) async {
-    try? await deleteWordSetOrThrow(id: id)
+    do {
+      try await deleteWordSetOrThrow(id: id)
+    } catch {
+      print("❌ [Sync] deleteWordSet 失敗: \(error.localizedDescription)")
+    }
   }
 
   func deleteWordSetOrThrow(id: UUID) async throws {
@@ -203,7 +204,11 @@ final class CardWordSetSyncService {
           card.correctStreak = row.correct_streak
           modelContext.insert(card)
         }
-        try? modelContext.save()
+        do {
+          try modelContext.save()
+        } catch {
+          print("❌ [Sync] pullCardsForWordSet save 失敗: \(error.localizedDescription)")
+        }
       }
     } catch {
       print("⚠️ [Sync] pullCardsForWordSet 失敗: \(error.localizedDescription)")
@@ -257,7 +262,11 @@ final class CardWordSetSyncService {
           }
         }
 
-        try? modelContext.save()
+        do {
+          try modelContext.save()
+        } catch {
+          print("❌ [Sync] pullVisibleWordSetsAndMergeToLocal save 失敗: \(error.localizedDescription)")
+        }
       }
     } catch {
       print("⚠️ [Sync] pullVisibleWordSetsAndMergeToLocal 失敗: \(error.localizedDescription)")
