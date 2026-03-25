@@ -150,8 +150,9 @@ struct SettingsView: View {
   }
 
   private func rescheduleDailyReminder() {
+    let now = Date()
     let dueCount = (try? modelContext.fetch(FetchDescriptor<Card>(
-      predicate: #Predicate { $0.dueAt <= Date() }
+      predicate: #Predicate { $0.dueAt <= now }
     )))?.count ?? 0
     NotificationManager.shared.scheduleDailyStudyReminder(
       hour: dailyHour,

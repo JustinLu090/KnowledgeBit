@@ -7,6 +7,7 @@ import SwiftData
 struct ProfileView: View {
   @EnvironmentObject var authService: AuthService
   @EnvironmentObject var dailyQuestService: DailyQuestService
+  @EnvironmentObject var experienceStore: ExperienceStore
   @Environment(\.modelContext) private var modelContext
   @Query private var userProfiles: [UserProfile]
   @StateObject private var profileViewModel = ProfileViewModel()
