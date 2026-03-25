@@ -4,6 +4,7 @@
 import Foundation
 import SwiftUI
 import Combine
+import Supabase
 
 @MainActor
 final class StrategicBattleViewModel: ObservableObject {
@@ -55,6 +56,11 @@ final class StrategicBattleViewModel: ObservableObject {
 
   /// 目前 Task 中正在送出的 bucket 時間戳集合，防止同一 bucket 因 timer 雙觸發而重複送出。
   private var submissionsInFlight: Set<TimeInterval> = []
+
+  /// 目前訂閱中的 Supabase Realtime 頻道（用於 unsubscribe）
+  private var realtimeChannel: RealtimeChannelV2?
+  /// Realtime 訂閱是否正在運行；view 可據此決定是否跳過手動 foreground polling
+  private(set) var isRealtimeActive = false
 
   private var timerCancellable: AnyCancellable?
   private var nowProvider: () -> Date
@@ -184,8 +190,81 @@ final class StrategicBattleViewModel: ObservableObject {
     }
   }
 
+  // MARK: - Realtime Subscription
+
+  /// battle_cells テーブルの変更を Supabase Realtime でリッスンし、変更があるたびに盤面を再取得する。
+  /// SwiftUI の `.task {}` modifier から呼び出すこと。view が消えると task がキャンセルされ、
+  /// defer ブロックが channel.unsubscribe() を呼び出してサーバーリソースを解放する。
+  func subscribeToRealtime() async {
+    guard let rid = roomId, let auth = authService else { return }
+    let client = auth.getClient()
+    let channel = client.realtimeV2.channel("battle-cells-\(rid.uuidString)")
+    realtimeChannel = channel
+
+    defer {
+      isRealtimeActive = false
+      realtimeChannel = nil
+      // Fire-and-forget: release server resources when the task ends (cancelled or normal exit)
+      let ch = channel
+      Task { await ch.unsubscribe() }
+    }
+
+    let changeStream = await channel.postgresChange(
+      AnyAction.self,
+      schema: "public",
+      table: "battle_cells",
+      filter: "room_id=eq.\(rid.uuidString)"
+    )
+    await channel.subscribe()
+    isRealtimeActive = true
+
+    #if DEBUG
+    print("[Battle] Realtime subscribed to battle_cells for room \(rid)")
+    #endif
+
+    for await _ in changeStream {
+      guard !Task.isCancelled else { break }
+      #if DEBUG
+      print("[Battle] Realtime: battle_cells changed, refreshing board")
+      #endif
+      await refreshBoardFromRealtime()
+    }
+  }
+
+  /// Realtime 訂閱關閉（view onDisappear 時呼叫，確保 channel 立即釋放）
+  func unsubscribeFromRealtime() {
+    isRealtimeActive = false
+    guard let channel = realtimeChannel else { return }
+    realtimeChannel = nil
+    Task { await channel.unsubscribe() }
+  }
+
+  /// Realtime 事件觸發時的輕量盤面刷新：只重取 cells，不重置 pendingKE 或 round summary
+  private func refreshBoardFromRealtime() async {
+    guard let rid = roomId, let service = battleRoomService else { return }
+    let bucket = currentBucket()
+    guard let dtos = try? await service.fetchBoardState(
+      roomId: rid, hourBucket: bucket, bucketSeconds: settlementBucketSeconds
+    ), dtos.count == 16 else { return }
+
+    let sorted = dtos.sorted { $0.id < $1.id }
+    cells = sorted.map { dto in
+      Cell(
+        id: dto.id,
+        owner: Owner(rawValue: dto.owner) ?? .neutral,
+        hpNow: dto.hp_now,
+        hpMax: dto.hp_max,
+        decayPerHour: dto.decay_per_hour,
+        enemyPressure: dto.enemy_pressure
+      )
+    }
+  }
+
   deinit {
     timerCancellable?.cancel()
+    // unsubscribeFromRealtime() cannot be called directly from deinit (MainActor isolation).
+    // The channel is released when the Task spawned by the view's .task modifier is cancelled
+    // (via SwiftUI's automatic task lifecycle), which triggers the defer in subscribeToRealtime().
   }
 
   // MARK: - Derived

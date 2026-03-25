@@ -103,7 +103,17 @@ private struct StrategicBattleViewContent: View {
   var body: some View {
     content
       .onAppear { Task { await vm.loadInitialBoard() } }
+      .onDisappear { vm.unsubscribeFromRealtime() }
+      .task {
+        // Subscribes to Realtime when the view appears; SwiftUI cancels this task
+        // automatically when the view disappears, triggering the defer/unsubscribe in the VM.
+        await vm.subscribeToRealtime()
+      }
       .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+        // Realtime reconnects automatically on foreground, but won't replay missed events.
+        // Trigger a one-shot reload to catch up; skip if Realtime is not yet active (VM will
+        // refresh via loadInitialBoard once the subscription is re-established).
+        guard vm.isRealtimeActive else { return }
         Task { await vm.loadInitialBoard() }
       }
       .onChange(of: vm.cells) { _, newCells in
