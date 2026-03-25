@@ -301,10 +301,10 @@ struct WordSetDetailView: View {
             .scaleEffect(1.2)
           Text("正在產生題目…")
             .font(.headline)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(.primary)
           Text("這會呼叫 AI 生成題目，可能需要 30～60 秒。")
             .font(.subheadline)
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
             .padding(.horizontal, 28)
         }
