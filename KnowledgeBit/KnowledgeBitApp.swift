@@ -207,6 +207,7 @@ struct KnowledgeBitApp: App {
     .modelContainer(sharedModelContainer)
     .onChange(of: scenePhase) { _, newPhase in
       if newPhase == .active {
+        UNUserNotificationCenter.current().setBadgeCount(0) { _ in }
         StatisticsManager.shared.flushYesterdayIfNeeded(
           modelContext: sharedModelContainer.mainContext,
           dailyQuestService: dailyQuestService

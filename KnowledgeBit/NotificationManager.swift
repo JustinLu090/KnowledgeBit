@@ -46,7 +46,7 @@ final class NotificationManager {
       ? "保持連勝！開始今天的 \(dueCount) 張複習吧"
       : "今天還沒有學習記錄，快來複習一下！"
     content.sound = .default
-    content.badge = dueCount > 0 ? NSNumber(value: dueCount) : nil
+    content.badge = dueCount > 0 ? 1 : nil
 
     var components = DateComponents()
     components.hour = hour
@@ -98,7 +98,7 @@ final class NotificationManager {
 
   /// 更新 App badge 為到期卡片數
   func updateBadge(dueCount: Int) {
-    UNUserNotificationCenter.current().setBadgeCount(max(dueCount, 0)) { error in
+    UNUserNotificationCenter.current().setBadgeCount(dueCount > 0 ? 1 : 0) { error in
       if let error { print("⚠️ [Notification] badge 更新失敗: \(error)") }
     }
   }
