@@ -9,6 +9,7 @@ import SwiftData
 struct AchievementsView: View {
   @ObservedObject private var service = AchievementService.shared
   @Environment(\.modelContext) private var modelContext
+  @Environment(\.dismiss) private var dismiss
   @EnvironmentObject var experienceStore: ExperienceStore
   @EnvironmentObject var dailyQuestService: DailyQuestService
   @Query(sort: \StudyLog.date, order: .reverse) private var studyLogs: [StudyLog]
@@ -19,11 +20,10 @@ struct AchievementsView: View {
     NavigationStack {
       ScrollView {
         VStack(spacing: 24) {
-          CompactPageHeader("成就")
-
           // 進度概覽
           progressHeader
             .padding(.horizontal, 20)
+            .padding(.top, 8)
 
           // 成就 Grid
           LazyVGrid(columns: columns, spacing: 16) {
@@ -38,7 +38,13 @@ struct AchievementsView: View {
         }
       }
       .background(Color(.systemGroupedBackground))
-      .toolbar(.hidden, for: .navigationBar)
+      .navigationTitle("成就")
+      .navigationBarTitleDisplayMode(.large)
+      .toolbar {
+        ToolbarItem(placement: .confirmationAction) {
+          Button("完成") { dismiss() }
+        }
+      }
       .onAppear {
         let streak = studyLogs.currentStreak()
         AchievementService.shared.evaluate(level: experienceStore.level, streak: streak)
@@ -140,21 +146,19 @@ struct AchievementCell: View {
         }
       }
 
-      Text(achievement.isUnlocked ? achievement.title : "???")
+      Text(achievement.title)
         .font(.system(size: 11, weight: .medium))
         .foregroundStyle(achievement.isUnlocked ? .primary : .secondary)
         .multilineTextAlignment(.center)
         .lineLimit(2)
 
-      if achievement.isUnlocked {
-        Text(achievement.rarity.label)
-          .font(.system(size: 10))
-          .foregroundStyle(achievement.rarity.color)
-          .padding(.horizontal, 6)
-          .padding(.vertical, 2)
-          .background(achievement.rarity.color.opacity(0.15))
-          .cornerRadius(4)
-      }
+      Text(achievement.rarity.label)
+        .font(.system(size: 10))
+        .foregroundStyle(achievement.isUnlocked ? achievement.rarity.color : Color(.systemGray3))
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background((achievement.isUnlocked ? achievement.rarity.color : Color(.systemGray3)).opacity(0.15))
+        .cornerRadius(4)
     }
     .frame(maxWidth: .infinity)
     .padding(.vertical, 12)
