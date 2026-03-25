@@ -209,13 +209,22 @@ final class StrategicBattleViewModel: ObservableObject {
       Task { await ch.unsubscribe() }
     }
 
-    let changeStream = await channel.postgresChange(
+    // postgresChange is synchronous; use new filter syntax (.eq) instead of raw string
+    let changeStream = channel.postgresChange(
       AnyAction.self,
       schema: "public",
       table: "battle_cells",
-      filter: "room_id=eq.\(rid.uuidString)"
+      filter: .eq("room_id", value: rid.uuidString)
     )
-    await channel.subscribe()
+    // subscribeWithError throws on connection failure; bail out gracefully
+    do {
+      try await channel.subscribeWithError()
+    } catch {
+      #if DEBUG
+      print("[Battle] Realtime subscribe failed: \(error)")
+      #endif
+      return
+    }
     isRealtimeActive = true
 
     #if DEBUG
