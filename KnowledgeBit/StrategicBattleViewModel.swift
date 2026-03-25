@@ -49,8 +49,12 @@ final class StrategicBattleViewModel: ObservableObject {
   /// 上一輪對應的 bucket 起始時間（供 UI 顯示「上一輪 09:00–10:00」）
   @Published private(set) var lastRoundBucket: Date? = nil
 
-  /// 上次提交失敗時，該筆 allocation 對應的 bucket；下次結算時會先重送此 bucket，再處理當前 bucket
-  private var lastFailedSubmitBucket: Date?
+  /// 提交失敗的 bucket → 當時的 allocation 快照。
+  /// 下次結算時依序重試每個 bucket，使用各自儲存的 allocation（而非當前的 pendingKE）。
+  private var failedSubmissions: [Date: [Int: Int]] = [:]
+
+  /// 目前 Task 中正在送出的 bucket 時間戳集合，防止同一 bucket 因 timer 雙觸發而重複送出。
+  private var submissionsInFlight: Set<TimeInterval> = []
 
   private var timerCancellable: AnyCancellable?
   private var nowProvider: () -> Date
@@ -148,6 +152,14 @@ final class StrategicBattleViewModel: ObservableObject {
         pendingKE = loaded
         #if DEBUG
         print("[Battle] restore pendingKE from store:", loaded)
+        #endif
+      }
+      // 還原跨 session 持久化的失敗提交佇列
+      let savedFailed = pendingStore.loadFailedSubmissions(roomId: rid)
+      if !savedFailed.isEmpty {
+        failedSubmissions.merge(savedFailed) { _, new in new }
+        #if DEBUG
+        print("[Battle] restored \(savedFailed.count) failed submission(s) from persistence")
         #endif
       }
       // 載入上一輪的雙方動作統整，一進畫面就顯示（含雙方皆未投入時）
@@ -317,43 +329,69 @@ final class StrategicBattleViewModel: ObservableObject {
   private func settleHourWithCloud(roomId rid: UUID, service: BattleRoomService) {
     let newHourBucket = currentBucket()
     let previousHourBucket = Date(timeIntervalSince1970: newHourBucket.timeIntervalSince1970 - Double(settlementBucketSeconds))
-    #if DEBUG
-    print("[Battle] settleHourWithCloud room=\(rid) prevBucket=\(previousHourBucket) newBucket=\(newHourBucket) bucketSeconds=\(settlementBucketSeconds) pendingKE=", pendingKE, "lastFailedSubmitBucket=", lastFailedSubmitBucket as Any)
-    #endif
+    let bucketKey = previousHourBucket.timeIntervalSince1970
+
+    // ① Guard: prevent double-settlement for the same bucket (timer double-fire protection)
+    guard !submissionsInFlight.contains(bucketKey) else {
+      #if DEBUG
+      print("[Battle] bucket \(previousHourBucket) already in flight, skipping double-settlement")
+      #endif
+      return
+    }
+    submissionsInFlight.insert(bucketKey)
+
+    // ② Snapshot current allocations NOW, before any async suspension point.
+    //    The retry path must use THIS snapshot, not whatever pendingKE contains later.
+    let currentAllocations = pendingKE
+    let currentSpend = currentAllocations.values.reduce(0, +)
     let beforeCells = cells
 
-    Task { @MainActor in
-      do {
-        if let failedBucket = lastFailedSubmitBucket {
-          try await service.submitAllocations(roomId: rid, hourBucket: failedBucket, allocations: pendingKE, bucketSeconds: settlementBucketSeconds)
-          let spent = pendingKE.values.reduce(0, +)
-          pendingKE.removeAll()
-          selectedCellID = nil
-          lastFailedSubmitBucket = nil
-          if spent > 0 {
-            hourlyBudget = max(0, hourlyBudget - spent)
-            onConsumedKE?(spent)
-          }
-          pendingStore.remove(roomId: rid, hourBucket: failedBucket)
-          WidgetReloader.reloadAll()
-          if let summary = try? await service.fetchRoundSummary(roomId: rid, hourBucket: failedBucket, bucketSeconds: settlementBucketSeconds) {
-            lastRoundSummary = summary
-            lastRoundBucket = failedBucket
-          }
-        }
+    #if DEBUG
+    print("[Battle] settleHourWithCloud room=\(rid) prevBucket=\(previousHourBucket) newBucket=\(newHourBucket) bucketSeconds=\(settlementBucketSeconds) pendingKE=", currentAllocations, "failedBuckets=", failedSubmissions.keys.map { Int($0.timeIntervalSince1970) }.sorted())
+    #endif
 
-        let toSubmit = pendingKE
-        let spent = toSubmit.values.reduce(0, +)
-        try await service.submitAllocations(roomId: rid, hourBucket: previousHourBucket, allocations: toSubmit, bucketSeconds: settlementBucketSeconds)
+    Task { @MainActor in
+      defer { submissionsInFlight.remove(bucketKey) }
+
+      do {
+        // ③ Retry previously failed buckets — each using ITS OWN saved allocations, not currentAllocations
+        let failedBuckets = failedSubmissions.keys.sorted()
+        for failedBucket in failedBuckets {
+          let failedKey = failedBucket.timeIntervalSince1970
+          // Skip if already being retried by a concurrent settlement call
+          guard !submissionsInFlight.contains(failedKey),
+                let savedAllocs = failedSubmissions[failedBucket] else { continue }
+          submissionsInFlight.insert(failedKey)
+          do {
+            try await service.submitAllocations(roomId: rid, hourBucket: failedBucket, allocations: savedAllocs, bucketSeconds: settlementBucketSeconds)
+            failedSubmissions.removeValue(forKey: failedBucket)
+            pendingStore.remove(roomId: rid, hourBucket: failedBucket)
+            #if DEBUG
+            print("[Battle] retry succeeded for failed bucket \(failedBucket)")
+            #endif
+          } catch {
+            #if DEBUG
+            print("[Battle] retry still failed for bucket \(failedBucket): \(error)")
+            #endif
+            // Keep in failedSubmissions for the next settlement cycle
+          }
+          submissionsInFlight.remove(failedKey)
+        }
+        // Persist the updated failed queue after retries (some may have been removed on success)
+        pendingStore.saveFailedSubmissions(roomId: rid, submissions: failedSubmissions)
+
+        // ④ Submit this hour's allocations (using the snapshot, not live pendingKE)
+        try await service.submitAllocations(roomId: rid, hourBucket: previousHourBucket, allocations: currentAllocations, bucketSeconds: settlementBucketSeconds)
         pendingKE.removeAll()
         selectedCellID = nil
-        if spent > 0 {
-          hourlyBudget = max(0, hourlyBudget - spent)
-          onConsumedKE?(spent)
+        if currentSpend > 0 {
+          hourlyBudget = max(0, hourlyBudget - currentSpend)
+          onConsumedKE?(currentSpend)
         }
         pendingStore.remove(roomId: rid, hourBucket: previousHourBucket)
         WidgetReloader.reloadAll()
 
+        // ⑤ Fetch updated board state
         var dtos = try await service.fetchBoardState(roomId: rid, hourBucket: newHourBucket, bucketSeconds: settlementBucketSeconds)
         #if DEBUG
         print("[Battle] after settlement board cells count=", dtos.count)
@@ -361,7 +399,7 @@ final class StrategicBattleViewModel: ObservableObject {
 
         let beforePlayerCount = beforeCells.filter { $0.owner == .player }.count
         let newPlayerCount = dtos.filter { $0.owner == "player" }.count
-        if toSubmit.isEmpty, beforePlayerCount > 0, newPlayerCount == 0 {
+        if currentAllocations.isEmpty, beforePlayerCount > 0, newPlayerCount == 0 {
           #if DEBUG
           print("[Battle] new board has 0 player cells (suspicious), refetching once...")
           #endif
@@ -384,9 +422,8 @@ final class StrategicBattleViewModel: ObservableObject {
             )
           }
           #if DEBUG
-          if !toSubmit.isEmpty {
-            let affected = toSubmit.keys.sorted()
-            for id in affected {
+          if !currentAllocations.isEmpty {
+            for id in currentAllocations.keys.sorted() {
               let before = beforeCells[id]
               let after = newCells[id]
               print("[Battle][Debug] cell", id,
@@ -401,13 +438,17 @@ final class StrategicBattleViewModel: ObservableObject {
           lastRoundSummary = summary
           lastRoundBucket = previousHourBucket
         }
+
       } catch {
         #if DEBUG
         print("[Battle] settleHourWithCloud error:", error)
         #endif
-        if lastFailedSubmitBucket == nil {
-          lastFailedSubmitBucket = previousHourBucket
-        }
+        // ⑥ Store the SNAPSHOT allocations for this bucket (not current pendingKE).
+        //    Clear pendingKE so the next hour starts fresh; the snapshot is safely queued.
+        failedSubmissions[previousHourBucket] = currentAllocations
+        pendingStore.saveFailedSubmissions(roomId: rid, submissions: failedSubmissions)
+        pendingKE.removeAll()
+        selectedCellID = nil
       }
     }
   }

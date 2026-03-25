@@ -35,6 +35,14 @@ final class BattleRoomService {
   private let client: SupabaseClient
   private let userId: UUID
 
+  /// Keys for submissions currently in-flight: "\(roomId).\(bucketTimestamp)".
+  /// Prevents duplicate RPC calls for the same (room, bucket) pair within one service instance.
+  private var inFlightKeys: Set<String> = []
+
+  private func inFlightKey(roomId: UUID, hourBucket: Date) -> String {
+    "\(roomId.uuidString).\(Int(hourBucket.timeIntervalSince1970))"
+  }
+
   init(authService: AuthService, userId: UUID) {
     self.client = authService.getClient()
     self.userId = userId
@@ -74,7 +82,18 @@ final class BattleRoomService {
 
   /// 將本小時投入提交至雲端（原子 upsert）。網路不穩時會自動重試最多 3 次（間隔 2 秒）。
   /// 伺服器端會在整點後彙整所有玩家投入並產生盤面。
+  /// 若相同 (roomId, hourBucket) 已在進行中，直接 return 避免重複提交。
   func submitAllocations(roomId: UUID, hourBucket: Date, allocations: [Int: Int], bucketSeconds: Int = 3600) async throws {
+    let key = inFlightKey(roomId: roomId, hourBucket: hourBucket)
+    guard !inFlightKeys.contains(key) else {
+      #if DEBUG
+      print("[Battle] submitAllocations: \(key) already in flight at service layer, skipping")
+      #endif
+      return
+    }
+    inFlightKeys.insert(key)
+    defer { inFlightKeys.remove(key) }
+
     let iso = ISO8601DateFormatter()
     iso.formatOptions = [.withInternetDateTime]
     let hourString = iso.string(from: hourBucket)

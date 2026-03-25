@@ -92,4 +92,45 @@ final class BattlePendingStore {
     defaults?.removeObject(forKey: key(roomId: roomId, hourBucket: hourBucket))
     defaults?.synchronize()
   }
+
+  // MARK: - Failed Submission Persistence
+  // Stores the queue of buckets that failed to submit so it survives app restarts.
+  // Format: "battle_pending_failed.{roomId}" -> JSON { "{timestamp}": { "cellId": ke, ... } }
+
+  private func failedKey(roomId: UUID) -> String {
+    "\(baseKey)_failed.\(roomId.uuidString)"
+  }
+
+  func saveFailedSubmissions(roomId: UUID, submissions: [Date: [Int: Int]]) {
+    guard !submissions.isEmpty else {
+      defaults?.removeObject(forKey: failedKey(roomId: roomId))
+      defaults?.synchronize()
+      return
+    }
+    // Serialise as { "<timestampInt>": { "<cellId>": ke } }
+    let serialisable = Dictionary(uniqueKeysWithValues: submissions.map { date, allocs -> (String, [String: Int]) in
+      let tsKey = String(Int(date.timeIntervalSince1970))
+      let strAllocs = Dictionary(uniqueKeysWithValues: allocs.map { ("\($0.key)", $0.value) })
+      return (tsKey, strAllocs)
+    })
+    guard let data = try? JSONSerialization.data(withJSONObject: serialisable) else { return }
+    defaults?.set(data, forKey: failedKey(roomId: roomId))
+    defaults?.synchronize()
+  }
+
+  func loadFailedSubmissions(roomId: UUID) -> [Date: [Int: Int]] {
+    guard let data = defaults?.data(forKey: failedKey(roomId: roomId)),
+          let outer = try? JSONSerialization.jsonObject(with: data) as? [String: [String: Int]]
+    else { return [:] }
+    return Dictionary(uniqueKeysWithValues: outer.compactMap { tsKey, strAllocs -> (Date, [Int: Int])? in
+      guard let ts = TimeInterval(tsKey) else { return nil }
+      let allocs = Dictionary(uniqueKeysWithValues: strAllocs.compactMap { k, v in Int(k).map { ($0, v) } })
+      return (Date(timeIntervalSince1970: ts), allocs)
+    })
+  }
+
+  func clearFailedSubmissions(roomId: UUID) {
+    defaults?.removeObject(forKey: failedKey(roomId: roomId))
+    defaults?.synchronize()
+  }
 }
