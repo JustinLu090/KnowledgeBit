@@ -12,6 +12,45 @@ enum QuizType {
   case multipleChoice
 }
 
+/// 測驗結果是否符合每日任務條件（與 `recordWordSetQuizResult` 一致，便於單元測試）
+enum DailyQuestQuizRules {
+  static func satisfiesAccuracyOver90(accuracyPercent: Int) -> Bool {
+    accuracyPercent >= 90
+  }
+
+  static func satisfiesWordSetPerfect(quizType: QuizType, isPerfect: Bool) -> Bool {
+    quizType == .general && isPerfect
+  }
+
+  static func satisfiesMultipleChoicePerfect(quizType: QuizType, isPerfect: Bool) -> Bool {
+    quizType == .multipleChoice && isPerfect
+  }
+}
+
+private struct DailyQuestSeededRNG: RandomNumberGenerator {
+  var state: UInt64
+
+  init(seed: Int) {
+    state = UInt64(seed)
+  }
+
+  mutating func next() -> UInt64 {
+    state = state &* 1103515245 &+ 12345
+    return state
+  }
+}
+
+/// 依「日」種子從 0...6 選出 3 個不重複索引（與 `DailyQuestService.selectRandomQuests` 一致）
+enum DailyQuestRandomSelection {
+  static func indices(for date: Date) -> [Int] {
+    let seed = Int(date.timeIntervalSince1970 / 86400)
+    var generator = DailyQuestSeededRNG(seed: seed)
+    var indices = Array(0..<7)
+    indices.shuffle(using: &generator)
+    return Array(indices.prefix(3)).sorted()
+  }
+}
+
 /// Daily quest model
 struct DailyQuest: Identifiable {
   let id: UUID
@@ -124,30 +163,9 @@ class DailyQuestService: ObservableObject {
   
   /// 基於日期隨機選出三個任務（同一天會選出相同的任務）
   private func selectRandomQuests(for date: Date) -> [Int] {
-    // 使用日期的時間戳作為隨機種子，確保同一天選出的任務相同
-    let seed = Int(date.timeIntervalSince1970 / 86400) // 除以86400得到天數
-    var generator = SeededRandomNumberGenerator(seed: seed)
-    
-    // 從 0-6 中隨機選出 3 個不重複的索引
-    var indices = Array(0..<7)
-    indices.shuffle(using: &generator)
-    return Array(indices.prefix(3)).sorted()
+    DailyQuestRandomSelection.indices(for: date)
   }
-  
-  /// 自定義隨機數生成器（基於種子）
-  private struct SeededRandomNumberGenerator: RandomNumberGenerator {
-    var state: UInt64
-    
-    init(seed: Int) {
-      state = UInt64(seed)
-    }
-    
-    mutating func next() -> UInt64 {
-      state = state &* 1103515245 &+ 12345
-      return state
-    }
-  }
-  
+
   private func loadQuests(selectedIndices: [Int]? = nil) {
     // 如果沒有提供選中的索引，從 UserDefaults 讀取
     let indices: [Int]
@@ -311,7 +329,7 @@ class DailyQuestService: ObservableObject {
     // 答對率超過 90%：兩種測驗皆可觸發
     if let index = quests.firstIndex(where: { $0.title == "單字集複習答對率超過 90%" }) {
       let wasCompleted = quests[index].isCompleted
-      if accuracyPercent >= 90 {
+      if DailyQuestQuizRules.satisfiesAccuracyOver90(accuracyPercent: accuracyPercent) {
         quests[index].updateProgress(1)
       }
       saveQuestsToStorage()
@@ -326,7 +344,7 @@ class DailyQuestService: ObservableObject {
     // 單字集複習全對：僅一般單字測驗 (.general) 且全對時觸發
     if let index = quests.firstIndex(where: { $0.title == "單字集複習全對" }) {
       let wasCompleted = quests[index].isCompleted
-      if quizType == .general && isPerfect {
+      if DailyQuestQuizRules.satisfiesWordSetPerfect(quizType: quizType, isPerfect: isPerfect) {
         quests[index].updateProgress(1)
       }
       saveQuestsToStorage()
@@ -341,7 +359,7 @@ class DailyQuestService: ObservableObject {
     // 選擇題測驗全對：僅選擇題測驗 (.multipleChoice) 且全對時觸發
     if let index = quests.firstIndex(where: { $0.title == "選擇題測驗全對" }) {
       let wasCompleted = quests[index].isCompleted
-      if quizType == .multipleChoice && isPerfect {
+      if DailyQuestQuizRules.satisfiesMultipleChoicePerfect(quizType: quizType, isPerfect: isPerfect) {
         quests[index].updateProgress(1)
       }
       saveQuestsToStorage()

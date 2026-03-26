@@ -13,6 +13,17 @@ import Combine
 import Supabase
 import WidgetKit
 
+/// 升級所需 EXP 曲線（與 `ExperienceStore` 共用，便於單元測試）
+enum ExperienceProgression {
+  /// 自目前等級 `level` 升級到下一級所需累積 EXP
+  static func expRequiredToAdvance(fromLevel level: Int) -> Int {
+    let baseExp = 100
+    let multiplier = pow(1.2, Double(level - 1))
+    let calculated = Int(Double(baseExp) * multiplier)
+    return max(calculated, 100)
+  }
+}
+
 class ExperienceStore: ObservableObject {
   // App Group UserDefaults
   private let userDefaults: UserDefaults
@@ -91,17 +102,6 @@ class ExperienceStore: ObservableObject {
   /// 本週累積 EXP（週一重置），用於好友排行榜
   private(set) var weeklyExp: Int = 0
 
-  // 計算升級所需 EXP 的函數（可自訂曲線）
-  // 使用 static 方法，避免在初始化時需要使用 self
-  private static func calculateExpToNext(for level: Int) -> Int {
-    // 基礎值 100，每級增加 20%（可調整）
-    let baseExp = 100
-    let multiplier = pow(1.2, Double(level - 1))
-    let calculated = Int(Double(baseExp) * multiplier)
-    // 確保至少為 100，避免過小
-    return max(calculated, 100)
-  }
-  
   // 初始化：從 App Group UserDefaults 讀取或使用預設值
   init() {
     if let sharedDefaults = UserDefaults(suiteName: AppGroup.identifier) {
@@ -137,7 +137,7 @@ class ExperienceStore: ObservableObject {
       self.expToNext = savedExpToNext
     } else {
       // 使用靜態方法計算，避免在初始化前使用 self
-      let calculatedExpToNext = ExperienceStore.calculateExpToNext(for: savedLevel)
+      let calculatedExpToNext = ExperienceProgression.expRequiredToAdvance(fromLevel: savedLevel)
       self.expToNext = calculatedExpToNext
       userDefaults.set(calculatedExpToNext, forKey: AppGroup.Keys.expToNext)
     }
@@ -170,7 +170,7 @@ class ExperienceStore: ObservableObject {
       exp -= expToNext
       
       // 計算下一級所需 EXP
-      expToNext = ExperienceStore.calculateExpToNext(for: level)
+      expToNext = ExperienceProgression.expRequiredToAdvance(fromLevel: level)
       
       #if DEBUG
       print("🎉 [EXP] 升級！新等級: \(level), 剩餘 EXP: \(exp), 下一級需要: \(expToNext)")
@@ -254,7 +254,7 @@ class ExperienceStore: ObservableObject {
         exp = max(cloudExp, 0) // 至少為 0
         
         // 計算 expToNext
-        expToNext = ExperienceStore.calculateExpToNext(for: level)
+        expToNext = ExperienceProgression.expRequiredToAdvance(fromLevel: level)
         
         // 使用批次同步方法，避免多次刷新
         // 不立即刷新 Widget，因為可能還有其他資料需要同步

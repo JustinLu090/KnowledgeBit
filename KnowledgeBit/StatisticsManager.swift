@@ -4,6 +4,15 @@
 import Foundation
 import SwiftData
 
+/// 本週第一天（週日為第一天），與 `StatisticsManager` 內部邏輯一致，供單元測試驗證
+enum StatisticsCalendarHelpers {
+  static func weekStartSunday(containing date: Date, calendar: Calendar) -> Date {
+    let weekday = calendar.component(.weekday, from: date)
+    let offset = weekday - 1
+    return calendar.date(byAdding: .day, value: -offset, to: calendar.startOfDay(for: date)) ?? date
+  }
+}
+
 /// 本週某一天的 EXP 數據（供圖表使用）
 struct DayExpItem: Identifiable {
   var id: Date { date }
@@ -37,9 +46,7 @@ final class StatisticsManager {
   
   /// 本週第一天（週日為第一天）
   private func weekStart(for date: Date) -> Date {
-    let weekday = calendar.component(.weekday, from: date)
-    let offset = weekday - 1
-    return calendar.date(byAdding: .day, value: -offset, to: calendar.startOfDay(for: date)) ?? date
+    StatisticsCalendarHelpers.weekStartSunday(containing: date, calendar: calendar)
   }
   
   /// 若 DailyQuestService 目前仍持有「昨天」的累積值，先寫入 DailyStats，再呼叫 refreshIfNewDay。

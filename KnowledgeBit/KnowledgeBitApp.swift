@@ -176,15 +176,15 @@ struct KnowledgeBitApp: App {
       }
       .animation(.easeInOut(duration: 0.2), value: authService.isLoggedIn)
       .onOpenURL { url in
-        if let wordSetId = Self.parseWordSetURL(url) {
+        if let wordSetId = DeepLinkParser.parseWordSetURL(url) {
           pendingBattleOpenStore.setWordSetIdToOpen(wordSetId)
           return
         }
-        if let wordSetId = Self.parseBattleURL(url) {
+        if let wordSetId = DeepLinkParser.parseBattleURL(url) {
           pendingBattleOpenStore.setBattleWordSetIdToOpen(wordSetId)
           return
         }
-        if let (code, _) = Self.parseInviteURL(url) {
+        if let (code, _) = DeepLinkParser.parseInviteURL(url) {
           Task { @MainActor in
             if authService.isLoggedIn {
               let inviteService = InviteService(authService: authService)
@@ -267,41 +267,5 @@ private extension KnowledgeBitApp {
     guard !studiedToday else { return }
     let streak = logs.currentStreak()
     NotificationManager.shared.scheduleStreakRiskReminder(currentStreak: streak)
-  }
-}
-
-// MARK: - Deep Link 解析（供 onOpenURL 使用）
-private extension KnowledgeBitApp {
-  /// 解析 Widget 單字卡連結 knowledgebit://wordSet?wordSetId=XXX
-  static func parseWordSetURL(_ url: URL) -> UUID? {
-    guard url.scheme?.lowercased() == "knowledgebit",
-          url.host?.lowercased() == "wordset",
-          let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
-          let idStr = comps.queryItems?.first(where: { $0.name == "wordSetId" })?.value else { return nil }
-    return UUID(uuidString: idStr)
-  }
-
-  /// 解析對戰地圖 Widget 連結 knowledgebit://battle?wordSetId=XXX
-  static func parseBattleURL(_ url: URL) -> UUID? {
-    guard url.scheme?.lowercased() == "knowledgebit",
-          url.host?.lowercased() == "battle",
-          let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
-          let idStr = comps.queryItems?.first(where: { $0.name == "wordSetId" })?.value else { return nil }
-    return UUID(uuidString: idStr)
-  }
-
-  /// 解析邀請連結，回傳 (invite_code, displayName 可選)。支援 https 邀請頁（與 InviteConstants.baseURL 同 host）與 knowledgebit://join/XXX
-  static func parseInviteURL(_ url: URL) -> (code: String, displayName: String?)? {
-    let scheme = url.scheme?.lowercased()
-    let host = url.host?.lowercased()
-    let path = url.path
-    let expectedHost = URL(string: InviteConstants.baseURL)?.host?.lowercased()
-    let isWeb = scheme == "https" && host == expectedHost && path.hasPrefix("/join/")
-    let isAppScheme = scheme == InviteConstants.urlScheme && host == "join"
-    guard isWeb || isAppScheme else { return nil }
-    let code = url.lastPathComponent.trimmingCharacters(in: .whitespaces)
-    guard !code.isEmpty, code.count <= 32,
-          code.range(of: "^[a-zA-Z0-9_\\-]+$", options: .regularExpression) != nil else { return nil }
-    return (code, nil)
   }
 }
