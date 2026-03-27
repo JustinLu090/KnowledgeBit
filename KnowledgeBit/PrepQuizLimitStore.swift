@@ -5,8 +5,13 @@ import Foundation
 
 @MainActor
 final class PrepQuizLimitStore {
-  private let defaults = AppGroup.sharedUserDefaults()
+  private let defaults: UserDefaults?
   private let baseKey = "prep_quiz_count"
+
+  /// - Note: 預設參數不可為 `AppGroup.sharedUserDefaults()`（Swift 6 會在 nonisolated 脈絡求值而報錯）。
+  init(defaults: UserDefaults? = nil) {
+    self.defaults = defaults ?? UserDefaults(suiteName: AppGroup.identifier)
+  }
 
   private func dayString(_ date: Date) -> String {
     let df = DateFormatter()

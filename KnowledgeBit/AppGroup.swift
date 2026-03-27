@@ -6,13 +6,14 @@ import Foundation
 enum AppGroup {
   /// App Group identifier for sharing SwiftData container between main app and widget
   /// Update this value to match your App Group ID configured in Xcode Signing & Capabilities
-  static let identifier = "group.com.team.knowledgebit"
-  
+  nonisolated static let identifier = "group.com.team.knowledgebit"
+
   /// 取得 App Group 共用的 UserDefaults。
   /// 讀寫請在主線程執行，以避免 CFPrefsPlistSource 相關錯誤。
   /// 若主控台出現 "Using kCFPreferencesAnyUser with a container is only allowed for System Containers"，
   /// 多為系統或框架在 App Group 環境下觸發，不影響功能；本專案一律使用 suiteName 取得共用容器。
-  static func sharedUserDefaults() -> UserDefaults? {
+  /// `nonisolated`：`UserDefaults(suiteName:)` 可自任何隔離域呼叫，避免屬性初始器／`init` 觸發併發警告。
+  nonisolated static func sharedUserDefaults() -> UserDefaults? {
     UserDefaults(suiteName: identifier)
   }
   

@@ -40,12 +40,34 @@ private struct DailyQuestSeededRNG: RandomNumberGenerator {
   }
 }
 
+/// 七項每日任務池的靜態定義（與 `DailyQuestService` 載入邏輯一致，供測試與文件對照）
+struct DailyQuestDefinition: Equatable {
+  let title: String
+  let targetValue: Int
+  let rewardExp: Int
+  let iconName: String
+}
+
+enum DailyQuestCatalog {
+  static let definitions: [DailyQuestDefinition] = [
+    DailyQuestDefinition(title: "學習時長 5 分鐘", targetValue: 5, rewardExp: 20, iconName: "clock.fill"),
+    DailyQuestDefinition(title: "完成一本單字集複習", targetValue: 1, rewardExp: 15, iconName: "book.fill"),
+    DailyQuestDefinition(title: "完成兩本單字集複習", targetValue: 2, rewardExp: 25, iconName: "books.vertical.fill"),
+    DailyQuestDefinition(title: "單字集複習答對率超過 90%", targetValue: 1, rewardExp: 15, iconName: "percent"),
+    DailyQuestDefinition(title: "單字集複習全對", targetValue: 1, rewardExp: 20, iconName: "checkmark.circle.fill"),
+    DailyQuestDefinition(title: "選擇題測驗全對", targetValue: 1, rewardExp: 20, iconName: "list.bullet.circle.fill"),
+    DailyQuestDefinition(title: "獲得 30 經驗值", targetValue: 30, rewardExp: 10, iconName: "bolt.fill")
+  ]
+
+  static var poolCount: Int { definitions.count }
+}
+
 /// 依「日」種子從 0...6 選出 3 個不重複索引（與 `DailyQuestService.selectRandomQuests` 一致）
 enum DailyQuestRandomSelection {
   static func indices(for date: Date) -> [Int] {
     let seed = Int(date.timeIntervalSince1970 / 86400)
     var generator = DailyQuestSeededRNG(seed: seed)
-    var indices = Array(0..<7)
+    var indices = Array(0..<DailyQuestCatalog.poolCount)
     indices.shuffle(using: &generator)
     return Array(indices.prefix(3)).sorted()
   }
@@ -111,20 +133,6 @@ class DailyQuestService: ObservableObject {
   private let todayStudyMinutesKey = "daily_quest_today_study_minutes"
   private let todayWordSetsCompletedKey = "daily_quest_today_word_sets"
   
-  // 所有可用的任務定義（七個）
-  private let allQuestTitles = [
-    "學習時長 5 分鐘",
-    "完成一本單字集複習",
-    "完成兩本單字集複習",
-    "單字集複習答對率超過 90%",
-    "單字集複習全對",
-    "選擇題測驗全對",
-    "獲得 30 經驗值"
-  ]
-  private let allQuestTargets = [5, 1, 2, 1, 1, 1, 30]
-  private let allQuestRewards = [20, 15, 25, 15, 20, 20, 10]
-  private let allQuestIcons = ["clock.fill", "book.fill", "books.vertical.fill", "percent", "checkmark.circle.fill", "list.bullet.circle.fill", "bolt.fill"]
-  
   init() {
     if let shared = UserDefaults(suiteName: AppGroup.identifier) {
       self.userDefaults = shared
@@ -182,12 +190,13 @@ class DailyQuestService: ObservableObject {
     
     // 只加載選中的三個任務
     quests = indices.map { i in
-      DailyQuest(
-        title: allQuestTitles[i],
-        targetValue: allQuestTargets[i],
+      let d = DailyQuestCatalog.definitions[i]
+      return DailyQuest(
+        title: d.title,
+        targetValue: d.targetValue,
         currentProgress: 0,
-        rewardExp: allQuestRewards[i],
-        iconName: allQuestIcons[i]
+        rewardExp: d.rewardExp,
+        iconName: d.iconName
       )
     }
   }

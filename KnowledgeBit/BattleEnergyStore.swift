@@ -9,10 +9,12 @@ import SwiftUI
 final class BattleEnergyStore: ObservableObject {
   /// 每個 namespace（目前用單字集 ID 字串）對應的 KE
   @Published private(set) var keByNamespace: [String: Int] = [:]
-  private let defaults = AppGroup.sharedUserDefaults()
+  private let defaults: UserDefaults?
   private let key = "battle_available_ke_by_namespace"
 
   init() {
+    // 勿在屬性初始器呼叫 `AppGroup.sharedUserDefaults()`（Swift 6：預設參數／儲存屬性初始器為 nonisolated）
+    self.defaults = UserDefaults(suiteName: AppGroup.identifier)
     if
       let data = defaults?.data(forKey: key),
       let decoded = try? JSONDecoder().decode([String: Int].self, from: data)

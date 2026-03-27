@@ -24,17 +24,22 @@ final class DailyQuestRulesTests: XCTestCase {
   func testRandomSelectionIsDeterministicPerDate() throws {
     var cal = Calendar(identifier: .gregorian)
     cal.timeZone = TimeZone(secondsFromGMT: 0)!
-    var comps = DateComponents(
+    let morning = try XCTUnwrap(cal.date(from: DateComponents(
       calendar: cal,
       year: 2025,
       month: 7,
       day: 4,
       hour: 8,
       minute: 30
-    )
-    let morning = try XCTUnwrap(cal.date(from: comps))
-    comps.hour = 22
-    let evening = try XCTUnwrap(cal.date(from: comps))
+    )))
+    let evening = try XCTUnwrap(cal.date(from: DateComponents(
+      calendar: cal,
+      year: 2025,
+      month: 7,
+      day: 4,
+      hour: 22,
+      minute: 30
+    )))
     let a = DailyQuestRandomSelection.indices(for: morning)
     let b = DailyQuestRandomSelection.indices(for: evening)
     XCTAssertEqual(a, b, "同一天內不同時間應得到相同任務索引")
@@ -43,13 +48,13 @@ final class DailyQuestRulesTests: XCTestCase {
   func testRandomSelectionShape() throws {
     var cal = Calendar(identifier: .gregorian)
     cal.timeZone = TimeZone(secondsFromGMT: 0)!
-    var comps = DateComponents(calendar: cal, year: 2024, month: 1, day: 1)
+    let comps = DateComponents(calendar: cal, year: 2024, month: 1, day: 1)
     let d = try XCTUnwrap(cal.date(from: comps))
     let idx = DailyQuestRandomSelection.indices(for: d)
     XCTAssertEqual(idx.count, 3)
     XCTAssertEqual(Set(idx).count, 3)
     XCTAssertEqual(idx, idx.sorted())
-    XCTAssertTrue(idx.allSatisfy { (0..<7).contains($0) })
+    XCTAssertTrue(idx.allSatisfy { (0..<DailyQuestCatalog.poolCount).contains($0) })
   }
 
   func testRandomSelectionValidForSeveralDaysInMarch() {

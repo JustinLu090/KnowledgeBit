@@ -31,8 +31,13 @@ struct BattleSession: Codable, Equatable {
 
 @MainActor
 final class BattleSessionStore {
-  private let defaults = AppGroup.sharedUserDefaults()
+  private let defaults: UserDefaults?
   private let baseKey = "battle_session"
+
+  /// - Note: 預設參數不可為 `AppGroup.sharedUserDefaults()`（Swift 6 會在 nonisolated 脈絡求值而報錯）。
+  init(defaults: UserDefaults? = nil) {
+    self.defaults = defaults ?? UserDefaults(suiteName: AppGroup.identifier)
+  }
 
   private func key(for wordSetID: UUID) -> String { "\(baseKey).\(wordSetID.uuidString)" }
 
@@ -63,8 +68,13 @@ final class BattleSessionStore {
 /// 依房間 + 小時儲存「本小時尚未結算」的 KE 分配，下次點開可還原並繼續修改
 @MainActor
 final class BattlePendingStore {
-  private let defaults = AppGroup.sharedUserDefaults()
+  private let defaults: UserDefaults?
   private let baseKey = "battle_pending"
+
+  /// - Note: 預設參數不可為 `AppGroup.sharedUserDefaults()`（Swift 6 會在 nonisolated 脈絡求值而報錯）。
+  init(defaults: UserDefaults? = nil) {
+    self.defaults = defaults ?? UserDefaults(suiteName: AppGroup.identifier)
+  }
 
   private func key(roomId: UUID, hourBucket: Date) -> String {
     let ts = Int(hourBucket.timeIntervalSince1970)

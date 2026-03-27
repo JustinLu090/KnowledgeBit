@@ -94,6 +94,36 @@ final class AchievementService: ObservableObject {
     Achievement(id: "daily_quest_30", title: "每日勇者", description: "完成 30 個每日任務", iconName: "list.bullet.circle.fill", rarity: .epic),
   ]
 
+  /// 各成就 id 是否達成門檻（與 `evaluate` 邏輯一致，供單元測試直接驗證）
+  static func achievementConditions(
+    level: Int,
+    streak: Int,
+    quizzes: Int,
+    reviews: Int,
+    battles: Int,
+    quests: Int,
+    friends: Int
+  ) -> [String: Bool] {
+    [
+      "level_5": level >= 5,
+      "level_10": level >= 10,
+      "level_20": level >= 20,
+      "level_50": level >= 50,
+      "streak_3": streak >= 3,
+      "streak_7": streak >= 7,
+      "streak_30": streak >= 30,
+      "quiz_10": quizzes >= 10,
+      "quiz_50": quizzes >= 50,
+      "review_100": reviews >= 100,
+      "review_500": reviews >= 500,
+      "battle_win_1": battles >= 1,
+      "battle_win_10": battles >= 10,
+      "friend_1": friends >= 1,
+      "daily_quest_10": quests >= 10,
+      "daily_quest_30": quests >= 30,
+    ]
+  }
+
   // MARK: - Init
 
   private init() {
@@ -159,24 +189,15 @@ final class AchievementService: ObservableObject {
     let quests     = defaults.integer(forKey: totalDailyQuestsKey)
     let friends    = defaults.integer(forKey: totalFriendsKey)
 
-    let conditions: [String: Bool] = [
-      "level_5":         level >= 5,
-      "level_10":        level >= 10,
-      "level_20":        level >= 20,
-      "level_50":        level >= 50,
-      "streak_3":        streak >= 3,
-      "streak_7":        streak >= 7,
-      "streak_30":       streak >= 30,
-      "quiz_10":         quizzes >= 10,
-      "quiz_50":         quizzes >= 50,
-      "review_100":      reviews >= 100,
-      "review_500":      reviews >= 500,
-      "battle_win_1":    battles >= 1,
-      "battle_win_10":   battles >= 10,
-      "friend_1":        friends >= 1,
-      "daily_quest_10":  quests >= 10,
-      "daily_quest_30":  quests >= 30,
-    ]
+    let conditions = Self.achievementConditions(
+      level: level,
+      streak: streak,
+      quizzes: quizzes,
+      reviews: reviews,
+      battles: battles,
+      quests: quests,
+      friends: friends
+    )
 
     var unlockedIds = defaults.stringArray(forKey: unlockedIdsKey) ?? []
     var dates: [String: Date] = [:]

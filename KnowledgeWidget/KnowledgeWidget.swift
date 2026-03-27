@@ -8,11 +8,11 @@ import Foundation
 // 注意：如果 AppGroup.swift 已添加到 Widget Extension target，可以移除此定義
 enum AppGroup {
   /// App Group identifier for sharing SwiftData container between main app and widget
-  static let identifier = "group.com.team.knowledgebit"
-  
+  nonisolated static let identifier = "group.com.team.knowledgebit"
+
   /// 取得 App Group 共用的 UserDefaults。
   /// 讀寫請在主線程執行，以避免 CFPrefsPlistSource 相關錯誤。
-  static func sharedUserDefaults() -> UserDefaults? {
+  nonisolated static func sharedUserDefaults() -> UserDefaults? {
     UserDefaults(suiteName: identifier)
   }
   
