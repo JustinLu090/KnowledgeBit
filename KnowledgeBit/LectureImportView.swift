@@ -80,15 +80,6 @@ struct LectureImportView: View {
         )
         .disabled(selectedPDFData == nil || isGenerating || isImporting)
 
-        generateActionButton(
-          title: "生成測驗",
-          subtitle: "建立選擇題與填空題",
-          icon: "checklist",
-          color: .orange,
-          task: .quiz,
-          loadingLabel: "測驗"
-        )
-        .disabled(selectedPDFData == nil || isGenerating || isImporting)
       }
 
       if let result {

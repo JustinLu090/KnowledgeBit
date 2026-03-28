@@ -35,6 +35,10 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>麥克風用於語音練習模式，讓您說出答案進行比對</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>語音辨識用於語音練習模式，將您的語音轉換為文字與答案進行比對</string>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>

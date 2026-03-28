@@ -6,6 +6,8 @@ import SwiftUI
 struct FlipCardView: View {
   let card: Card
   @Binding var isFlipped: Bool
+  /// 翻到背面（顯示答案）時呼叫，供 TTS 朗讀使用
+  var onReveal: (() -> Void)? = nil
   
   var body: some View {
     ZStack {
@@ -28,8 +30,11 @@ struct FlipCardView: View {
         )
     }
     .animation(.spring(), value: isFlipped)
+    .onChange(of: isFlipped) { _, newValue in
+      if newValue { onReveal?() }
+    }
   }
-  
+
   // MARK: - Front View (Question)
   
   private var frontView: some View {

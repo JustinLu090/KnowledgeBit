@@ -4,6 +4,11 @@
 import SwiftUI
 import SwiftData
 
+/// Thin Identifiable wrapper so UUID can drive .sheet(item:)
+private struct ChallengeSheetItem: Identifiable {
+  let id: UUID
+}
+
 struct MainTabView: View {
   @Environment(\.modelContext) private var modelContext
   @EnvironmentObject var authService: AuthService
@@ -11,10 +16,12 @@ struct MainTabView: View {
   @EnvironmentObject var dailyQuestService: DailyQuestService
   @EnvironmentObject var pendingInviteStore: PendingInviteStore
   @EnvironmentObject var pendingBattleOpenStore: PendingBattleOpenStore
+  @EnvironmentObject var pendingChallengeStore: PendingChallengeStore
   @StateObject private var communityViewModel = CommunityViewModel()
   @ObservedObject private var achievementService = AchievementService.shared
   @Query(sort: \StudyLog.date, order: .reverse) private var studyLogs: [StudyLog]
   @State private var selectedTab = 0
+  @State private var pendingChallengeItem: ChallengeSheetItem?
   
   init() {
     // Configure tab bar appearance globally
@@ -71,6 +78,18 @@ struct MainTabView: View {
         .tag(4)
     }
     .tint(.blue)
+    .sheet(item: $pendingChallengeItem) { item in
+      ChallengeDetailView(challengeId: item.id)
+        .environmentObject(authService)
+        .environmentObject(experienceStore)
+        .environmentObject(pendingChallengeStore)
+    }
+    .onChange(of: pendingChallengeStore.challengeId) { _, newId in
+      if let id = newId {
+        pendingChallengeItem = ChallengeSheetItem(id: id)
+        pendingChallengeStore.clear()
+      }
+    }
     .overlay {
       if let unlocked = achievementService.newlyUnlocked {
         AchievementUnlockOverlay(achievement: unlocked) {

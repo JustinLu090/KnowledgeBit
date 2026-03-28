@@ -113,7 +113,7 @@ struct FeatureTutorialSheet: View {
           illustration: AnyView(MockWordSetList(tint: feature.tint))
         ),
         TutorialStep(
-          title: "點「開始測驗 / 選擇題測驗」",
+          title: "點「開始複習 / 選擇題測驗」",
           caption: "選擇題會顯示進度與選項。",
           illustration: AnyView(MockWordSetDetailQuizBar(tint: feature.tint))
         ),
@@ -387,7 +387,7 @@ private struct MockWordSetDetailQuizBar: View {
         }
 
       HStack(spacing: 10) {
-        mockButton("開始測驗", systemImage: "play.fill", color: .blue)
+        mockButton("開始複習", systemImage: "play.fill", color: .blue)
         mockButton("選擇題測驗", systemImage: "list.bullet.rectangle.fill", color: tint)
         mockButton("對戰", systemImage: "flag.2.crossed.fill", color: .purple)
       }
