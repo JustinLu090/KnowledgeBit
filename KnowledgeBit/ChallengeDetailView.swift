@@ -34,6 +34,8 @@ private struct MCQQuestion: Identifiable {
 struct ChallengeDetailView: View {
   let challengeId: UUID
 
+  @Environment(\.dismiss) private var dismiss
+
   @EnvironmentObject private var authService: AuthService
   @EnvironmentObject private var experienceStore: ExperienceStore
   @EnvironmentObject private var pendingChallengeStore: PendingChallengeStore
@@ -75,7 +77,7 @@ struct ChallengeDetailView: View {
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
-          Button("關閉") { pendingChallengeStore.clear() }
+          Button("關閉") { dismiss() }
         }
       }
     }
@@ -200,7 +202,7 @@ struct ChallengeDetailView: View {
         resultBanner(challenge: challenge)
         scoreComparisonCard(challenge: challenge)
 
-        Button(action: { pendingChallengeStore.clear() }) {
+        Button(action: { dismiss() }) {
           Text("完成")
             .font(.headline)
             .foregroundStyle(.white)
