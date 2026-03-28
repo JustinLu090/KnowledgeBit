@@ -186,10 +186,11 @@ struct WordSetDetailView: View {
       }
     }
     .fullScreenCover(isPresented: $showingQuiz) {
-      QuizView(cards: cards)
+      QuizView(cards: cards, language: wordSet.language, wordSetId: wordSet.id, wordSetTitle: wordSet.title)
         .environmentObject(taskService)
         .environmentObject(experienceStore)
         .environmentObject(questService)
+        .environmentObject(authService)
     }
     .fullScreenCover(isPresented: $showingChoiceQuiz) {
       choiceQuizCoverContent

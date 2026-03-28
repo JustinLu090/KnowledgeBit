@@ -14,6 +14,9 @@ struct CommunityView: View {
   @State private var wordSetInvitations: [WordSetInvitationItem] = []
   @State private var wordSetInvitationsLoading = false
   @State private var respondingInvitationId: UUID?
+  @State private var recentChallenges: [ChallengeSession] = []
+  @State private var challengesLoading = false
+  @State private var selectedChallenge: ChallengeSession?
 
   var body: some View {
     NavigationStack {
@@ -42,6 +45,11 @@ struct CommunityView: View {
               entries: viewModel.leaderboard,
               isLoading: viewModel.leaderboardLoading
             )
+
+            // 挑戰動態
+            if !recentChallenges.isEmpty || challengesLoading {
+              challengeActivitySection
+            }
 
             // 好友列表
             friendsSection
@@ -76,13 +84,18 @@ struct CommunityView: View {
           Text("確定要解除與 \(f.displayName) 的好友關係嗎？")
         }
       }
+      .sheet(item: $selectedChallenge) { session in
+        ChallengeDetailView(challengeId: session.id)
+      }
       .task {
         await viewModel.refresh(authService: authService)
         await loadWordSetInvitations()
+        await loadRecentChallenges()
       }
       .refreshable {
         await viewModel.refresh(authService: authService)
         await loadWordSetInvitations()
+        await loadRecentChallenges()
       }
       .alert("加入好友", isPresented: Binding(
         get: { pendingInviteStore.inviteCode != nil },
@@ -335,6 +348,54 @@ struct CommunityView: View {
     }
   }
 
+  // MARK: - 挑戰動態區塊
+
+  private var challengeActivitySection: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text("挑戰動態")
+        .font(.system(size: 20, weight: .semibold))
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 4)
+
+      if challengesLoading {
+        HStack {
+          Spacer()
+          ProgressView()
+          Spacer()
+        }
+        .padding(24)
+        .background(Color(.secondarySystemGroupedBackground))
+        .cornerRadius(12)
+      } else {
+        VStack(spacing: 0) {
+          ForEach(recentChallenges) { session in
+            ChallengeActivityRow(session: session) {
+              selectedChallenge = session
+            }
+          }
+        }
+        .background(Color(.secondarySystemGroupedBackground))
+        .cornerRadius(12)
+      }
+    }
+  }
+
+  private func loadRecentChallenges() async {
+    guard let uid = authService.currentUserId else { return }
+    challengesLoading = true
+    defer { challengesLoading = false }
+    do {
+      let service = ChallengeService(authService: authService)
+      let friendIds = viewModel.friends.map { $0.userId }
+      let challenges = try await service.fetchRecentChallengesByFriends(friendIds: friendIds, limit: 10)
+      await MainActor.run { recentChallenges = challenges.filter { $0.challengerId != uid } }
+    } catch is CancellationError {
+    } catch let urlError as URLError where urlError.code == .cancelled {
+    } catch {
+      print("⚠️ [Community] loadRecentChallenges 失敗: \(error)")
+    }
+  }
+
   // MARK: - 好友列表區塊
 
   private var friendsSection: some View {
@@ -535,6 +596,62 @@ private struct FriendRow: View {
         Label("刪除好友", systemImage: "person.badge.minus")
       }
     }
+  }
+}
+
+private struct ChallengeActivityRow: View {
+  let session: ChallengeSession
+  let onTap: () -> Void
+
+  private var statusBadge: (text: String, color: Color) {
+    if session.isExpired { return ("已過期", .secondary) }
+    if session.isCompleted { return ("已完成", .green) }
+    return ("挑戰中", .orange)
+  }
+
+  private var relativeTime: String {
+    let diff = Date().timeIntervalSince(session.createdAt)
+    if diff < 60 { return "剛剛" }
+    if diff < 3600 { return "\(Int(diff / 60)) 分鐘前" }
+    if diff < 86400 { return "\(Int(diff / 3600)) 小時前" }
+    return "\(Int(diff / 86400)) 天前"
+  }
+
+  var body: some View {
+    Button(action: onTap) {
+      HStack(spacing: 14) {
+        Image(systemName: "flag.fill")
+          .font(.system(size: 24))
+          .foregroundStyle(.orange)
+          .frame(width: 44, height: 44)
+          .background(Color.orange.opacity(0.12))
+          .clipShape(Circle())
+
+        VStack(alignment: .leading, spacing: 3) {
+          Text("\(session.challengerDisplayName ?? "某人") 向大家發起了挑戰！")
+            .font(.system(size: 15, weight: .medium))
+            .foregroundStyle(.primary)
+            .lineLimit(2)
+          Text("「\(session.wordSetTitle)」・\(session.challengerScore)/\(session.challengerTotal) 題")
+            .font(.system(size: 13))
+            .foregroundStyle(.secondary)
+        }
+
+        Spacer()
+
+        VStack(alignment: .trailing, spacing: 4) {
+          Text(statusBadge.text)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(statusBadge.color)
+          Text(relativeTime)
+            .font(.system(size: 11))
+            .foregroundStyle(.tertiary)
+        }
+      }
+      .padding(14)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
   }
 }
 

@@ -140,6 +140,7 @@ struct KnowledgeBitApp: App {
   @StateObject private var pendingInviteStore = PendingInviteStore()
   @StateObject private var pendingBattleOpenStore = PendingBattleOpenStore()
   @StateObject private var battleEnergyStore = BattleEnergyStore()
+  @StateObject private var pendingChallengeStore = PendingChallengeStore()
   @Environment(\.scenePhase) private var scenePhase
 
   var body: some Scene {
@@ -154,6 +155,7 @@ struct KnowledgeBitApp: App {
             .environmentObject(pendingInviteStore)
             .environmentObject(pendingBattleOpenStore)
             .environmentObject(battleEnergyStore)
+            .environmentObject(pendingChallengeStore)
             .onAppear {
               experienceStore.authService = authService
               // 延遲 0.5 秒再同步，避免 nw_connection 尚未 ready 時發出請求（race condition）
@@ -182,6 +184,10 @@ struct KnowledgeBitApp: App {
         }
         if let wordSetId = DeepLinkParser.parseBattleURL(url) {
           pendingBattleOpenStore.setBattleWordSetIdToOpen(wordSetId)
+          return
+        }
+        if let challengeId = DeepLinkParser.parseChallengeURL(url) {
+          pendingChallengeStore.setPending(challengeId)
           return
         }
         if let (code, _) = DeepLinkParser.parseInviteURL(url) {
