@@ -19,7 +19,7 @@ struct AppGuideView: View {
             .font(.system(.largeTitle, design: .rounded).weight(.bold))
             .multilineTextAlignment(.center)
 
-          Text("建立單字集、開始測驗，並用成就追蹤進度。")
+          Text("建立單字集、開始複習，並用成就追蹤進度。")
             .font(.callout)
             .foregroundStyle(.secondary)
             .lineSpacing(4)

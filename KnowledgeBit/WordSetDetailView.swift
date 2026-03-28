@@ -123,7 +123,7 @@ struct WordSetDetailView: View {
         if !cards.isEmpty {
           HStack(spacing: 10) {
             Button(action: { showingQuiz = true }) {
-              bottomBarButtonLabel(systemImage: "play.fill", title: "開始測驗")
+              bottomBarButtonLabel(systemImage: "play.fill", title: "開始複習")
             }
             .buttonStyle(.plain)
             .background(Color.blue)
@@ -186,16 +186,18 @@ struct WordSetDetailView: View {
       }
     }
     .fullScreenCover(isPresented: $showingQuiz) {
-      QuizView(cards: cards)
+      QuizView(cards: cards, language: wordSet.language, wordSetId: wordSet.id, wordSetTitle: wordSet.title)
         .environmentObject(taskService)
         .environmentObject(experienceStore)
         .environmentObject(questService)
+        .environmentObject(authService)
     }
     .fullScreenCover(isPresented: $showingChoiceQuiz) {
       choiceQuizCoverContent
         .environmentObject(taskService)
         .environmentObject(experienceStore)
         .environmentObject(questService)
+        .environmentObject(authService)
     }
     .sheet(isPresented: $showingCollaboratorPicker) {
       CollaboratorPickerView(
@@ -352,12 +354,17 @@ struct WordSetDetailView: View {
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
     } else if let q = generatedQuestions, !q.isEmpty {
-      ChoiceQuizView(questions: q) { score, total in
-        recordChoiceQuizResult(score: score, total: total)
-        showingChoiceQuiz = false
-        generatedQuestions = nil
-        quizGenerationTask = nil
-      }
+      ChoiceQuizView(
+        questions: q,
+        onFinish: { score, total in
+          recordChoiceQuizResult(score: score, total: total)
+          showingChoiceQuiz = false
+          generatedQuestions = nil
+          quizGenerationTask = nil
+        },
+        wordSetId: wordSet.id,
+        wordSetTitle: wordSet.title
+      )
     } else if generatedQuestions != nil {
       VStack(spacing: 16) {
         Text("未產生題目")

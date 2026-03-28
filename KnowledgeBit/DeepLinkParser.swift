@@ -22,6 +22,15 @@ enum DeepLinkParser {
     return UUID(uuidString: idStr)
   }
 
+  /// 解析挑戰連結 `knowledgebit://challenge?id=<UUID>`
+  static func parseChallengeURL(_ url: URL) -> UUID? {
+    guard url.scheme?.lowercased() == "knowledgebit",
+          url.host?.lowercased() == "challenge",
+          let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
+          let idStr = comps.queryItems?.first(where: { $0.name == "id" })?.value else { return nil }
+    return UUID(uuidString: idStr)
+  }
+
   /// 解析邀請連結，回傳 `(invite_code, displayName 可選)`。支援 https 邀請頁與 `knowledgebit://join/XXX`
   static func parseInviteURL(_ url: URL) -> (code: String, displayName: String?)? {
     let scheme = url.scheme?.lowercased()

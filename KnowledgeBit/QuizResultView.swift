@@ -6,13 +6,29 @@ struct QuizResultView: View {
   let streakDays: Int?  // optional
   let onFinish: () -> Void
   let onRetry: () -> Void
-  
+
+  /// 可選：傳入後才顯示「發送挑戰」按鈕
+  var wordSetId: UUID? = nil
+  var wordSetTitle: String? = nil
+  var timeSpent: TimeInterval = 0
+  /// 本次測驗的卡片 ID 清單（已洗牌順序），用於固定題目挑戰
+  var cardIds: [UUID] = []
+  /// AI 生成的完整題目快照，傳入後存進 Supabase 供 B 直接使用
+  var quizContent: [ChoiceQuestion]? = nil
+
   @EnvironmentObject var experienceStore: ExperienceStore
   @EnvironmentObject var questService: DailyQuestService
-  
+  @EnvironmentObject var authService: AuthService
+
   @State private var trophyScale: CGFloat = 0.5
   @State private var showContent: Bool = false
   @State private var didGrantExp: Bool = false // 防止重複加 EXP
+
+  // 挑戰相關狀態
+  @State private var isCreatingChallenge = false
+  @State private var challengeURL: URL?
+  @State private var challengeErrorMessage: String?
+  @State private var showChallengeError = false
   
   // Calculate accuracy percentage
   private var accuracyPercentage: Int {
@@ -155,7 +171,48 @@ struct QuizResultView: View {
               .background(Color.accentColor)
               .cornerRadius(16)
           }
-          
+
+          // 發送挑戰按鈕（僅在有指定 wordSet 時顯示）
+          if let wsId = wordSetId, let wsTitle = wordSetTitle {
+            if let url = challengeURL {
+              // 挑戰已建立 → 顯示分享按鈕
+              ShareLink(
+                item: url,
+                subject: Text("KnowledgeBit 挑戰"),
+                message: Text("我在「\(wsTitle)」答對了 \(rememberedCards)/\(totalCards) 題，你能超越我嗎？")
+              ) {
+                Label("分享挑戰連結", systemImage: "square.and.arrow.up")
+                  .font(.headline)
+                  .foregroundStyle(.white)
+                  .frame(maxWidth: .infinity)
+                  .frame(height: 56)
+                  .background(Color.orange)
+                  .cornerRadius(16)
+              }
+            } else {
+              // 尚未建立挑戰
+              Button(action: {
+                Task { await createChallenge(wordSetId: wsId, wordSetTitle: wsTitle) }
+              }) {
+                HStack {
+                  if isCreatingChallenge {
+                    ProgressView().tint(.white)
+                  } else {
+                    Image(systemName: "flag.fill")
+                  }
+                  Text(isCreatingChallenge ? "建立中…" : "發送挑戰給好友")
+                }
+                .font(.headline)
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 56)
+                .background(Color.orange)
+                .cornerRadius(16)
+              }
+              .disabled(isCreatingChallenge)
+            }
+          }
+
           // Secondary retry button
           Button(action: onRetry) {
             Text("再挑戰一次")
@@ -186,20 +243,48 @@ struct QuizResultView: View {
       withAnimation(.spring(response: 0.6, dampingFraction: 0.6)) {
         trophyScale = 1.0
       }
-      
+
       // Content fade-in with delay
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
         withAnimation(.easeOut(duration: 0.5)) {
           showContent = true
         }
       }
-      
+
       // 給予 EXP（只執行一次）
       if !didGrantExp {
         grantExperience()
         didGrantExp = true
       }
     }
+    .alert("挑戰建立失敗", isPresented: $showChallengeError) {
+      Button("確定", role: .cancel) {}
+    } message: {
+      Text(challengeErrorMessage ?? "請稍後再試")
+    }
+  }
+
+  // MARK: - 建立挑戰
+
+  private func createChallenge(wordSetId: UUID, wordSetTitle: String) async {
+    isCreatingChallenge = true
+    let service = ChallengeService(authService: authService)
+    do {
+      let id = try await service.createChallenge(
+        wordSetId: wordSetId,
+        wordSetTitle: wordSetTitle,
+        score: rememberedCards,
+        total: totalCards,
+        timeSpent: timeSpent,
+        cardIds: cardIds,
+        quizContent: quizContent
+      )
+      challengeURL = ChallengeService.deepLink(for: id)
+    } catch {
+      challengeErrorMessage = error.localizedDescription
+      showChallengeError = true
+    }
+    isCreatingChallenge = false
   }
   
   // Color based on accuracy

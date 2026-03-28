@@ -12,8 +12,19 @@ struct AddWordSetView: View {
 
   @State private var title = ""
   @State private var selectedLevel: String? = nil
+  @State private var selectedLanguage: String? = nil
 
   let levels = ["初級", "中級", "高級"]
+  let languages: [(label: String, code: String?)] = [
+    ("自動偵測", nil),
+    ("英文 (en-US)", "en-US"),
+    ("日文 (ja-JP)", "ja-JP"),
+    ("韓文 (ko-KR)", "ko-KR"),
+    ("中文繁體 (zh-TW)", "zh-TW"),
+    ("法文 (fr-FR)", "fr-FR"),
+    ("德文 (de-DE)", "de-DE"),
+    ("西班牙文 (es-ES)", "es-ES"),
+  ]
 
   var body: some View {
     NavigationStack {
@@ -25,6 +36,12 @@ struct AddWordSetView: View {
             Text("無").tag(nil as String?)
             ForEach(levels, id: \.self) { level in
               Text(level).tag(level as String?)
+            }
+          }
+
+          Picker("語言（TTS / 語音練習）", selection: $selectedLanguage) {
+            ForEach(languages, id: \.code) { item in
+              Text(item.label).tag(item.code as String?)
             }
           }
         }
@@ -41,6 +58,7 @@ struct AddWordSetView: View {
             let newWordSet = WordSet(
               title: title,
               level: selectedLevel,
+              language: selectedLanguage,
               ownerUserId: ownerId
             )
             modelContext.insert(newWordSet)
