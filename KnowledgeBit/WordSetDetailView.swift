@@ -123,7 +123,7 @@ struct WordSetDetailView: View {
         if !cards.isEmpty {
           HStack(spacing: 10) {
             Button(action: { showingQuiz = true }) {
-              bottomBarButtonLabel(systemImage: "play.fill", title: "開始測驗")
+              bottomBarButtonLabel(systemImage: "play.fill", title: "開始複習")
             }
             .buttonStyle(.plain)
             .background(Color.blue)

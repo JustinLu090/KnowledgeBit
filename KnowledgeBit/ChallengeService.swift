@@ -30,7 +30,8 @@ final class ChallengeService {
     wordSetTitle: String,
     score: Int,
     total: Int,
-    timeSpent: TimeInterval
+    timeSpent: TimeInterval,
+    combo: Int = 0
   ) async throws -> UUID {
     guard let userId = authService.currentUserId else {
       throw ChallengeError.notLoggedIn
@@ -52,6 +53,7 @@ final class ChallengeService {
       let challenger_total: Int
       let challenger_time_spent: Double
       let target_score: Int  // 接受者須超越的目標分數（初始等於 challenger_score）
+      let challenger_combo: Int  // 發起者最高連答數（選擇題模式）
     }
 
     struct ReturnedId: Decodable {
@@ -68,7 +70,8 @@ final class ChallengeService {
       challenger_score: score,
       challenger_total: total,
       challenger_time_spent: timeSpent,
-      target_score: score
+      target_score: score,
+      challenger_combo: combo
     )
 
     let rows: [ReturnedId] = try await client
@@ -124,7 +127,8 @@ final class ChallengeService {
     challengeId: UUID,
     score: Int,
     total: Int,
-    timeSpent: TimeInterval
+    timeSpent: TimeInterval,
+    combo: Int = 0
   ) async throws {
     guard let userId = authService.currentUserId else { throw ChallengeError.notLoggedIn }
 
@@ -137,6 +141,7 @@ final class ChallengeService {
       let respondent_total: Int
       let respondent_time_spent: Double
       let respondent_completed_at: String // ISO8601
+      let respondent_combo: Int           // 最高連答數（選擇題模式）
       let status: String
     }
 
@@ -148,6 +153,7 @@ final class ChallengeService {
       respondent_total: total,
       respondent_time_spent: timeSpent,
       respondent_completed_at: iso.string(from: Date()),
+      respondent_combo: combo,
       status: "completed"
     )
 

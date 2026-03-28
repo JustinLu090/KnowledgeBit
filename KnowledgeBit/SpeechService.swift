@@ -58,11 +58,12 @@ class SpeechService: NSObject, ObservableObject {
 
   func speak(_ text: String, language: String?) {
     let localeId = SpeechService.bcp47(for: language)
-    print("🔊 DEBUG: Attempting to speak: \"\(text)\" | language param=\(language ?? "nil") → locale=\(localeId)")
+    print("🔊 speak: \"\(text)\" locale=\(localeId)")
 
-    // 關鍵修正：確保 Audio Session 為 .playAndRecord + .defaultToSpeaker
-    // 若前次 STT 將 session 設為 .record，TTS 會完全無聲；
-    // 必須在每次 speak 前切換回可播放模式並重新 activate。
+    // ① 強制停止 STT，確保 audioEngine.stop() + removeTap 已執行、session 已 deactivate
+    stopListening()
+
+    // ② 語音模式下說完後可能接著錄音，保持 .playAndRecord
     let session = AVAudioSession.sharedInstance()
     do {
       try session.setCategory(
@@ -70,9 +71,10 @@ class SpeechService: NSObject, ObservableObject {
         mode: .default,
         options: [.defaultToSpeaker, .allowBluetoothHFP]
       )
-      try session.setActive(true)
+      // notifyOthersOnDeactivation 確保其他 audio clients 知道 session 狀態
+      try session.setActive(true, options: .notifyOthersOnDeactivation)
     } catch {
-      print("🔊 DEBUG: AVAudioSession setup failed: \(error.localizedDescription)")
+      print("🔊 AVAudioSession setup failed: \(error.localizedDescription)")
     }
 
     let utterance = AVSpeechUtterance(string: text)
@@ -81,26 +83,32 @@ class SpeechService: NSObject, ObservableObject {
     synthesizer.stopSpeaking(at: .immediate)
     synthesizer.speak(utterance)
 
-    print("🔊 DEBUG: Voice used=\(utterance.voice?.language ?? "none") | synthesizer=\(synthesizer)")
+    print("🔊 Voice used=\(utterance.voice?.language ?? "none")")
   }
 
   /// 翻面時依序朗讀：正面 → 停頓 0.5 秒 → 背面
   /// 利用 AVSpeechSynthesizer 的 utterance 排隊機制，不需要 DispatchQueue.asyncAfter。
   func speakCard(front: String, back: String, language: String?) {
     let localeId = SpeechService.bcp47(for: language)
-    print("🔊 DEBUG: speakCard front=\"\(front)\" back=\"\(back)\" locale=\(localeId)")
+    print("🔊 speakCard front=\"\(front)\" back=\"\(back)\" locale=\(localeId)")
 
-    // 確保 Audio Session 為可播放模式
+    // ① 強制停止 STT：確保 audioEngine.stop() + inputNode.removeTap 已執行，
+    //    並同步呼叫 setActive(false)，讓後續 TTS 可乾淨地接管 session。
+    stopListening()
+
+    // ② TTS 模式不需錄音，使用 .playback 可獲得最乾淨的播放路由；
+    //    .defaultToSpeaker 確保走揚聲器而非聽筒。
+    //    notifyOthersOnDeactivation 讓其他 audio client（如音樂 App）知道 session 狀態。
     let session = AVAudioSession.sharedInstance()
     do {
       try session.setCategory(
-        .playAndRecord,
+        .playback,
         mode: .default,
-        options: [.defaultToSpeaker, .allowBluetoothHFP]
+        options: .defaultToSpeaker
       )
-      try session.setActive(true)
+      try session.setActive(true, options: .notifyOthersOnDeactivation)
     } catch {
-      print("🔊 DEBUG: AVAudioSession setup failed: \(error.localizedDescription)")
+      print("🔊 AVAudioSession setup failed: \(error.localizedDescription)")
     }
 
     synthesizer.stopSpeaking(at: .immediate)
@@ -183,13 +191,16 @@ class SpeechService: NSObject, ObservableObject {
       throw SpeechError.recognizerUnavailable
     }
 
-    // 強制清理舊狀態，避免「tap already installed」崩潰
-    resetEngine()
+    // ① 完整重置 engine + 同步 deactivate session（修正 mDataByteSize(0) 根本原因）
+    //    resetEngine() 確保舊的 tap 已移除，stopSpeaking() 中斷任何進行中的 TTS。
+    stopListening()   // 含 resetEngine() + setActive(false)
     stopSpeaking()
 
-    // Audio Session 設定（必須在 audioEngine.prepare 前完成）
+    // ② Audio Session 切換：先明確 deactivate（讓系統回收資源），再切至 .record。
+    //    若前次 session 已是 inactive，setActive(false) 會靜默失敗，不影響後續。
     let session = AVAudioSession.sharedInstance()
     do {
+      try? session.setActive(false, options: .notifyOthersOnDeactivation)
       try session.setCategory(.record, mode: .measurement, options: .duckOthers)
       try session.setActive(true, options: .notifyOthersOnDeactivation)
     } catch {

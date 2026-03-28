@@ -1,7 +1,33 @@
 // ChallengeDetailView.swift
-// 非同步挑戰：接受挑戰、進行測驗、顯示雙方比對結果
+// 非同步挑戰：接受挑戰、進行「四選一選擇題」測驗、顯示雙方比對結果
 
 import SwiftUI
+
+// MARK: - MCQQuestion（內部用，不需 Codable）
+
+private struct MCQQuestion: Identifiable {
+  let id = UUID()
+  let prompt: String          // 問題（卡片正面）
+  let correctAnswer: String   // 正確答案（卡片背面）
+  let choices: [String]       // 四個選項（已隨機排列）
+
+  /// 從 ChallengeCard 陣列自動產生選擇題（以其他卡片的背面作為干擾項）
+  static func makeQuestions(from cards: [ChallengeCard]) -> [MCQQuestion] {
+    guard cards.count >= 2 else { return [] }
+    return cards.map { card in
+      let pool = cards.filter { $0.id != card.id }.map { $0.content }.shuffled()
+      // 取最多 3 個干擾項；不足時重複 pool 以填滿
+      var distractors: [String] = []
+      var used = 0
+      while distractors.count < 3 {
+        distractors.append(pool[used % pool.count])
+        used += 1
+      }
+      let choices = ([card.content] + distractors).shuffled()
+      return MCQQuestion(prompt: card.title, correctAnswer: card.content, choices: choices)
+    }.shuffled()
+  }
+}
 
 // MARK: - ChallengeDetailView
 
@@ -22,7 +48,7 @@ struct ChallengeDetailView: View {
 
   // 測驗狀態
   @State private var showQuiz = false
-  @State private var quizResult: (score: Int, total: Int, timeSpent: TimeInterval)?
+  @State private var quizResult: (score: Int, total: Int, timeSpent: TimeInterval, combo: Int)?
 
   // 提交後的最終結果
   @State private var isSubmitting = false
@@ -54,13 +80,13 @@ struct ChallengeDetailView: View {
       }
     }
     .task { await loadChallenge() }
-    // 測驗完成後的全螢幕覆蓋
+    // 強制四選一模式：以 ChallengeMultipleChoiceQuizView 取代舊版閃卡翻面
     .fullScreenCover(isPresented: $showQuiz) {
       if !challengeCards.isEmpty {
-        ChallengeQuizView(cards: challengeCards) { score, total, timeSpent in
-          quizResult = (score, total, timeSpent)
+        ChallengeMultipleChoiceQuizView(cards: challengeCards) { score, total, timeSpent, combo in
+          quizResult = (score, total, timeSpent, combo)
           showQuiz = false
-          Task { await submitResult(score: score, total: total, timeSpent: timeSpent) }
+          Task { await submitResult(score: score, total: total, timeSpent: timeSpent, combo: combo) }
         }
         .environmentObject(authService)
       }
@@ -111,13 +137,26 @@ struct ChallengeDetailView: View {
         // 挑戰者資訊卡
         challengerCard(challenge: challenge)
 
+        // 選擇題模式說明 badge
+        HStack(spacing: 8) {
+          Image(systemName: "checkmark.square.fill")
+            .foregroundStyle(.orange)
+          Text("這是一場四選一選擇題挑戰")
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(.orange)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Color.orange.opacity(0.1))
+        .cornerRadius(10)
+        .padding(.horizontal)
+
         // 單字集資訊
         wordSetCard(challenge: challenge)
 
         // 接受挑戰按鈕
         VStack(spacing: 12) {
           if challengeCards.isEmpty && challenge.wordSetId != nil {
-            // 卡片未載入
             Button(action: { Task { await loadCards(challenge: challenge) } }) {
               Label("載入題目", systemImage: "arrow.down.circle")
                 .font(.headline)
@@ -130,7 +169,7 @@ struct ChallengeDetailView: View {
             .padding(.horizontal)
           } else if !challengeCards.isEmpty {
             Button(action: { showQuiz = true }) {
-              Label("接受挑戰（\(challengeCards.count) 題）", systemImage: "flag.fill")
+              Label("開始挑戰（\(challengeCards.count) 題）", systemImage: "flag.fill")
                 .font(.headline)
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
@@ -140,7 +179,6 @@ struct ChallengeDetailView: View {
             }
             .padding(.horizontal)
           } else {
-            // wordSetId 為 nil，無法取得題目
             Text("此挑戰的單字集已被刪除，無法進行測驗。")
               .font(.subheadline)
               .foregroundStyle(.secondary)
@@ -159,13 +197,9 @@ struct ChallengeDetailView: View {
   private func resultView(challenge: ChallengeSession) -> some View {
     ScrollView {
       VStack(spacing: 24) {
-        // 結果 Banner
         resultBanner(challenge: challenge)
-
-        // 雙方成績對比
         scoreComparisonCard(challenge: challenge)
 
-        // 關閉按鈕
         Button(action: { pendingChallengeStore.clear() }) {
           Text("完成")
             .font(.headline)
@@ -207,7 +241,6 @@ struct ChallengeDetailView: View {
 
   private func challengerCard(challenge: ChallengeSession) -> some View {
     VStack(spacing: 12) {
-      // 頭像佔位
       ZStack {
         Circle()
           .fill(Color.accentColor.opacity(0.15))
@@ -228,12 +261,14 @@ struct ChallengeDetailView: View {
           .foregroundStyle(.secondary)
       }
 
-      // 挑戰者分數預覽
       HStack(spacing: 8) {
         scoreTag(score: challenge.challengerScore,
                  total: challenge.challengerTotal,
                  color: .blue,
                  label: "對方分數")
+        if let combo = challenge.challengerCombo, combo > 0 {
+          scoreTag(score: combo, total: challenge.challengerTotal, color: .orange, label: "最高連答")
+        }
       }
     }
     .frame(maxWidth: .infinity)
@@ -296,6 +331,10 @@ struct ChallengeDetailView: View {
         Text("成績比較")
           .font(.headline)
         Spacer()
+        // 選擇題模式標記
+        Label("選擇題", systemImage: "checkmark.square")
+          .font(.caption)
+          .foregroundStyle(.orange)
       }
       .padding(.horizontal, 16)
       .padding(.top, 16)
@@ -307,18 +346,18 @@ struct ChallengeDetailView: View {
         // 挑戰者欄
         VStack(spacing: 6) {
           Text(challenge.challengerDisplayName ?? "對方")
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
+            .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
           Text("\(challenge.challengerScore)/\(challenge.challengerTotal)")
             .font(.title2.bold())
           Text("\(challenge.challengerAccuracy)%")
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            .font(.caption).foregroundStyle(.secondary)
           if let t = challenge.challengerTimeSpent {
             Text(String(format: "%.0f 秒", t))
-              .font(.caption2)
-              .foregroundStyle(.secondary)
+              .font(.caption2).foregroundStyle(.secondary)
+          }
+          if let c = challenge.challengerCombo, c > 0 {
+            Label("\(c) 連答", systemImage: "bolt.fill")
+              .font(.caption2).foregroundStyle(.orange)
           }
         }
         .frame(maxWidth: .infinity)
@@ -329,22 +368,22 @@ struct ChallengeDetailView: View {
         // 接受者欄
         VStack(spacing: 6) {
           Text("你")
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
+            .font(.subheadline).foregroundStyle(.secondary)
           if let rScore = challenge.respondentScore, let rTotal = challenge.respondentTotal {
             Text("\(rScore)/\(rTotal)")
               .font(.title2.bold())
             Text("\(challenge.respondentAccuracy ?? 0)%")
-              .font(.caption)
-              .foregroundStyle(.secondary)
+              .font(.caption).foregroundStyle(.secondary)
             if let t = challenge.respondentTimeSpent {
               Text(String(format: "%.0f 秒", t))
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+                .font(.caption2).foregroundStyle(.secondary)
+            }
+            if let c = challenge.respondentCombo, c > 0 {
+              Label("\(c) 連答", systemImage: "bolt.fill")
+                .font(.caption2).foregroundStyle(.orange)
             }
           } else {
-            Text("–")
-              .font(.title2.bold())
+            Text("–").font(.title2.bold())
           }
         }
         .frame(maxWidth: .infinity)
@@ -359,8 +398,7 @@ struct ChallengeDetailView: View {
   private func scoreTag(score: Int, total: Int, color: Color, label: String) -> some View {
     VStack(spacing: 2) {
       Text(label).font(.caption2).foregroundStyle(.secondary)
-      Text("\(score)/\(total)").font(.title3.bold().monospacedDigit()
-      ).foregroundStyle(color)
+      Text("\(score)/\(total)").font(.title3.bold().monospacedDigit()).foregroundStyle(color)
     }
     .padding(.horizontal, 12)
     .padding(.vertical, 8)
@@ -377,7 +415,6 @@ struct ChallengeDetailView: View {
     do {
       let ch = try await service.fetchChallenge(id: challengeId)
       challenge = ch
-      // 若有 wordSetId，預先載入卡片
       if let wsId = ch.wordSetId, ch.isPending {
         challengeCards = (try? await service.fetchChallengeCards(wordSetId: wsId)) ?? []
       }
@@ -399,7 +436,7 @@ struct ChallengeDetailView: View {
 
   // MARK: - Submit Result
 
-  private func submitResult(score: Int, total: Int, timeSpent: TimeInterval) async {
+  private func submitResult(score: Int, total: Int, timeSpent: TimeInterval, combo: Int) async {
     isSubmitting = true
     let service = ChallengeService(authService: authService)
     do {
@@ -407,16 +444,16 @@ struct ChallengeDetailView: View {
         challengeId: challengeId,
         score: score,
         total: total,
-        timeSpent: timeSpent)
-      // 重新讀取最新資料，填入 respondent 欄位
+        timeSpent: timeSpent,
+        combo: combo)
       let updated = try await service.fetchChallenge(id: challengeId)
       finalChallenge = updated
     } catch {
-      // 即使上傳失敗，仍顯示本地分數
       var local = challenge
       local?.respondentScore = score
       local?.respondentTotal = total
       local?.respondentTimeSpent = timeSpent
+      local?.respondentCombo = combo
       finalChallenge = local
     }
     isSubmitting = false
@@ -434,40 +471,42 @@ struct ChallengeDetailView: View {
   }
 }
 
-// MARK: - ChallengeQuizView
-// 輕量測驗視圖，接受 [ChallengeCard]，完成後回呼成績
+// MARK: - ChallengeMultipleChoiceQuizView
+// 四選一選擇題，取代舊版閃卡翻面模式，帶計時、連答（Combo）追蹤
 
-struct ChallengeQuizView: View {
+struct ChallengeMultipleChoiceQuizView: View {
   let cards: [ChallengeCard]
-  let onFinish: (Int, Int, TimeInterval) -> Void
+  /// 完成回呼：(正確數, 總題數, 耗時秒數, 最高連答數)
+  let onFinish: (Int, Int, TimeInterval, Int) -> Void
 
-  @State private var shuffled: [ChallengeCard] = []
+  @State private var questions: [MCQQuestion] = []
   @State private var currentIndex = 0
-  @State private var isFlipped = false
   @State private var score = 0
+  @State private var currentCombo = 0
+  @State private var maxCombo = 0
   @State private var startTime = Date()
+  @State private var selectedAnswer: String? = nil
+  @State private var showFeedback = false
   @State private var showExitAlert = false
+
   @Environment(\.dismiss) private var dismiss
 
   var body: some View {
     NavigationStack {
-      VStack {
-        // 進度
-        Text("Question \(currentIndex + 1) / \(shuffled.count)")
-          .font(.caption).foregroundStyle(.secondary).padding(.top)
+      VStack(spacing: 0) {
+        progressHeader
 
-        Spacer()
-
-        if shuffled.isEmpty {
-          Text("沒有卡片").foregroundStyle(.secondary)
-        } else {
-          challengeCard
+        if questions.isEmpty {
+          Spacer()
+          Text("題目不足（至少需要 2 張卡片）")
+            .foregroundStyle(.secondary)
+          Spacer()
+        } else if currentIndex < questions.count {
+          questionView(question: questions[currentIndex])
         }
-
-        Spacer()
-        bottomButtons
       }
-      .navigationTitle(cards.isEmpty ? "挑戰" : "挑戰測驗")
+      .background(Color(.systemGroupedBackground).ignoresSafeArea())
+      .navigationTitle("選擇題挑戰")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
@@ -482,76 +521,150 @@ struct ChallengeQuizView: View {
       }
     }
     .onAppear {
-      shuffled = cards.shuffled()
+      questions = MCQQuestion.makeQuestions(from: cards)
       startTime = Date()
     }
   }
 
-  // MARK: - Card
+  // MARK: - Progress Header
 
-  private var challengeCard: some View {
-    ZStack {
-      RoundedRectangle(cornerRadius: 20)
-        .fill(Color.blue.opacity(0.1))
-        .shadow(radius: 5)
-
-      VStack {
-        Text(isFlipped ? "💡 答案" : "❓ 問題")
-          .font(.caption).foregroundStyle(.secondary)
-          .frame(maxWidth: .infinity, alignment: .leading).padding()
+  private var progressHeader: some View {
+    VStack(spacing: 6) {
+      HStack {
+        Text("第 \(min(currentIndex + 1, questions.count)) / \(questions.count) 題")
+          .font(.caption)
+          .foregroundStyle(.secondary)
         Spacer()
-        Text(isFlipped ? shuffled[currentIndex].content : shuffled[currentIndex].title)
-          .font(.title).bold().multilineTextAlignment(.center).padding()
-        Spacer()
+        // Combo 指示
+        if currentCombo >= 2 {
+          Label("\(currentCombo) 連答！", systemImage: "bolt.fill")
+            .font(.caption.bold())
+            .foregroundStyle(.orange)
+        }
+        // 分數
+        Text("\(score) 分")
+          .font(.caption.bold())
+          .foregroundStyle(.primary)
       }
+      .padding(.horizontal, 20)
+
+      ProgressView(value: Double(currentIndex), total: Double(max(questions.count, 1)))
+        .tint(currentCombo >= 3 ? .orange : .accentColor)
+        .padding(.horizontal, 20)
     }
-    .frame(height: 360)
-    .padding()
-    .onTapGesture {
-      withAnimation(.spring()) { isFlipped.toggle() }
-    }
-    .animation(.spring(), value: isFlipped)
+    .padding(.top, 12)
+    .padding(.bottom, 8)
   }
 
-  // MARK: - Buttons
+  // MARK: - Question View
 
   @ViewBuilder
-  private var bottomButtons: some View {
-    if isFlipped {
-      HStack(spacing: 40) {
-        actionButton(isCorrect: false)
-        actionButton(isCorrect: true)
+  private func questionView(question: MCQQuestion) -> some View {
+    ScrollView {
+      VStack(spacing: 24) {
+        // 問題卡
+        VStack(spacing: 12) {
+          Text("問題")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          Text(question.prompt)
+            .font(.title2.bold())
+            .multilineTextAlignment(.center)
+            .padding()
+        }
+        .frame(maxWidth: .infinity, minHeight: 140)
+        .background(Color(.secondarySystemGroupedBackground))
+        .cornerRadius(20)
+        .padding(.horizontal)
+        .padding(.top, 8)
+
+        // 選項按鈕
+        VStack(spacing: 12) {
+          ForEach(question.choices, id: \.self) { choice in
+            choiceButton(choice: choice, question: question)
+          }
+        }
+        .padding(.horizontal)
+        .disabled(showFeedback)
       }
-      .padding(.bottom, 50)
+      .padding(.bottom, 40)
+    }
+  }
+
+  @ViewBuilder
+  private func choiceButton(choice: String, question: MCQQuestion) -> some View {
+    let isSelected = selectedAnswer == choice
+    let isCorrect = choice == question.correctAnswer
+    let bgColor: Color = {
+      guard showFeedback && isSelected else { return Color(.secondarySystemGroupedBackground) }
+      return isCorrect ? .green.opacity(0.2) : .red.opacity(0.2)
+    }()
+    let borderColor: Color = {
+      guard showFeedback else { return Color.clear }
+      if isSelected { return isCorrect ? .green : .red }
+      if isCorrect { return .green }  // 顯示正確答案
+      return Color.clear
+    }()
+
+    Button(action: { selectAnswer(choice, question: question) }) {
+      HStack {
+        Text(choice)
+          .font(.body)
+          .multilineTextAlignment(.leading)
+          .foregroundStyle(.primary)
+        Spacer()
+        if showFeedback {
+          if isSelected {
+            Image(systemName: isCorrect ? "checkmark.circle.fill" : "xmark.circle.fill")
+              .foregroundStyle(isCorrect ? .green : .red)
+          } else if isCorrect {
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+          }
+        }
+      }
+      .padding(16)
+      .background(bgColor)
+      .overlay(
+        RoundedRectangle(cornerRadius: 12)
+          .stroke(borderColor, lineWidth: 2)
+      )
+      .cornerRadius(12)
+    }
+    .buttonStyle(.plain)
+  }
+
+  // MARK: - Logic
+
+  private func selectAnswer(_ answer: String, question: MCQQuestion) {
+    guard !showFeedback else { return }
+    selectedAnswer = answer
+    showFeedback = true
+
+    let isCorrect = answer == question.correctAnswer
+    if isCorrect {
+      score += 1
+      currentCombo += 1
+      maxCombo = max(maxCombo, currentCombo)
     } else {
-      Text("點擊卡片查看答案")
-        .foregroundStyle(.secondary)
-        .padding(.bottom, 50)
+      currentCombo = 0
+    }
+
+    // 0.9 秒後自動進入下一題
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+      advance()
     }
   }
 
-  private func actionButton(isCorrect: Bool) -> some View {
-    Button(action: { nextCard(isCorrect: isCorrect) }) {
-      VStack {
-        Image(systemName: isCorrect ? "checkmark.circle.fill" : "xmark.circle.fill")
-          .font(.system(size: 50))
-          .foregroundStyle(isCorrect ? .green : .red)
-        Text(isCorrect ? "記住了" : "忘了")
-          .font(.caption)
-      }
-    }
-  }
-
-  private func nextCard(isCorrect: Bool) {
-    if isCorrect { score += 1 }
-    withAnimation {
-      if currentIndex < shuffled.count - 1 {
-        isFlipped = false
+  private func advance() {
+    selectedAnswer = nil
+    showFeedback = false
+    if currentIndex < questions.count - 1 {
+      withAnimation(.easeInOut(duration: 0.2)) {
         currentIndex += 1
-      } else {
-        let elapsed = Date().timeIntervalSince(startTime)
-        onFinish(score, shuffled.count, elapsed)
       }
+    } else {
+      let elapsed = Date().timeIntervalSince(startTime)
+      onFinish(score, questions.count, elapsed, maxCombo)
     }
   }
 }

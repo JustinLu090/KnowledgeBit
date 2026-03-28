@@ -28,6 +28,9 @@ struct ChallengeSession: Codable, Identifiable {
   /// 接受者需超越的目標分數（初始等於 challengerScore，未來可獨立設定門檻）
   let targetScore: Int?
 
+  /// 發起者最高連答數（選擇題模式）
+  let challengerCombo: Int?
+
   // 接受者（回應後填入）
   var respondentId: UUID?
   var respondentDisplayName: String?
@@ -35,6 +38,8 @@ struct ChallengeSession: Codable, Identifiable {
   var respondentTotal: Int?
   var respondentTimeSpent: Double?
   var respondentCompletedAt: Date?
+  /// 接受者最高連答數（選擇題模式）
+  var respondentCombo: Int?
 
   // 狀態
   let status: String   // "pending" | "completed" | "expired"
@@ -54,12 +59,14 @@ struct ChallengeSession: Codable, Identifiable {
     case challengerTimeSpent      = "challenger_time_spent"
     case challengerCompletedAt    = "challenger_completed_at"
     case targetScore              = "target_score"
+    case challengerCombo          = "challenger_combo"
     case respondentId             = "respondent_id"
     case respondentDisplayName    = "respondent_display_name"
     case respondentScore          = "respondent_score"
     case respondentTotal          = "respondent_total"
     case respondentTimeSpent      = "respondent_time_spent"
     case respondentCompletedAt    = "respondent_completed_at"
+    case respondentCombo          = "respondent_combo"
     case status
     case createdAt                = "created_at"
     case expiresAt                = "expires_at"
