@@ -31,7 +31,9 @@ final class ChallengeService {
     score: Int,
     total: Int,
     timeSpent: TimeInterval,
-    combo: Int = 0
+    combo: Int = 0,
+    cardIds: [UUID] = [],
+    quizContent: [ChoiceQuestion]? = nil
   ) async throws -> UUID {
     guard let userId = authService.currentUserId else {
       throw ChallengeError.notLoggedIn
@@ -53,7 +55,9 @@ final class ChallengeService {
       let challenger_total: Int
       let challenger_time_spent: Double
       let target_score: Int  // 接受者須超越的目標分數（初始等於 challenger_score）
-      let challenger_combo: Int  // 發起者最高連答數（選擇題模式）
+      let challenger_combo: Int         // 發起者最高連答數（選擇題模式）
+      let shuffled_card_ids: [String]   // 固定題目順序（UUID 字串陣列）
+      let quiz_content: [ChoiceQuestion]?  // AI 生成的完整題目快照
     }
 
     struct ReturnedId: Decodable {
@@ -71,7 +75,9 @@ final class ChallengeService {
       challenger_total: total,
       challenger_time_spent: timeSpent,
       target_score: score,
-      challenger_combo: combo
+      challenger_combo: combo,
+      shuffled_card_ids: cardIds.map { $0.uuidString },
+      quiz_content: quizContent
     )
 
     let rows: [ReturnedId] = try await client
@@ -118,6 +124,28 @@ final class ChallengeService {
       .value
 
     return rows.map { ChallengeCard(id: $0.id, title: $0.title, content: $0.content) }
+  }
+
+  /// 依固定卡片 ID 清單取得卡片，並保留發起者的洗牌順序
+  func fetchChallengeCardsByIds(_ cardIds: [UUID]) async throws -> [ChallengeCard] {
+    guard !cardIds.isEmpty else { return [] }
+    struct CardRow: Decodable {
+      let id: UUID
+      let title: String
+      let content: String
+    }
+    let rows: [CardRow] = try await client
+      .from("cards")
+      .select("id, title, content")
+      .in("id", values: cardIds.map { $0.uuidString })
+      .execute()
+      .value
+
+    // 依 cardIds 原始順序重新排序（Supabase 不保證回傳順序）
+    let rowMap = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0) })
+    return cardIds.compactMap { id in
+      rowMap[id].map { ChallengeCard(id: $0.id, title: $0.title, content: $0.content) }
+    }
   }
 
   // MARK: - 回應挑戰

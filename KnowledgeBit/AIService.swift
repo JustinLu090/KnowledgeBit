@@ -32,7 +32,7 @@ private struct GenerateCardBody: Encodable {
 }
 
 /// 單題選擇題（挖空句 + 四選一 + 詳解），與 generate-quiz 回傳格式對應
-struct ChoiceQuestion: Decodable {
+struct ChoiceQuestion: Codable {
   let sentence_with_blank: String
   let correct_answer: String
   let options: [String]

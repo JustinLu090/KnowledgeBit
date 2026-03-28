@@ -31,6 +31,12 @@ struct ChallengeSession: Codable, Identifiable {
   /// 發起者最高連答數（選擇題模式）
   let challengerCombo: Int?
 
+  /// 固定題目順序：發起者使用的卡片 ID 清單（已洗牌），接受者必須依此順序出題
+  let shuffledCardIds: [UUID]?
+
+  /// AI 生成的完整題目快照，B 直接使用此內容，不重新呼叫 AI
+  let quizContent: [ChoiceQuestion]?
+
   // 接受者（回應後填入）
   var respondentId: UUID?
   var respondentDisplayName: String?
@@ -60,6 +66,8 @@ struct ChallengeSession: Codable, Identifiable {
     case challengerCompletedAt    = "challenger_completed_at"
     case targetScore              = "target_score"
     case challengerCombo          = "challenger_combo"
+    case shuffledCardIds          = "shuffled_card_ids"
+    case quizContent              = "quiz_content"
     case respondentId             = "respondent_id"
     case respondentDisplayName    = "respondent_display_name"
     case respondentScore          = "respondent_score"

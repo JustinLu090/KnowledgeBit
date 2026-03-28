@@ -94,9 +94,7 @@ struct QuizView: View {
             dismiss()
           },
           onRetry: { retryQuiz() },
-          wordSetId: wordSetId,
-          wordSetTitle: wordSetTitle,
-          timeSpent: quizTimeSpent
+          // 開始複習（翻卡模式）不提供挑戰按鈕；選擇題測驗才能挑戰好友
         )
       } else {
         quizInProgressView

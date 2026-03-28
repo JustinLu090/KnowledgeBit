@@ -187,7 +187,7 @@ struct KnowledgeBitApp: App {
           return
         }
         if let challengeId = DeepLinkParser.parseChallengeURL(url) {
-          pendingChallengeStore.setPending(challengeId)
+          pendingChallengeStore.handleIncomingChallenge(challengeId)
           return
         }
         if let (code, _) = DeepLinkParser.parseInviteURL(url) {

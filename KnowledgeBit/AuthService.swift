@@ -252,14 +252,12 @@ final class AuthService: ObservableObject {
     if let id = currentUserId {
       defaults.set(id.uuidString, forKey: Self.appGroupKeys.userId)
     }
-    defaults.synchronize() // 確保立即寫入，避免競爭條件
-    
     // 只有在需要時才觸發 Widget 刷新（批次同步時由 syncToWidget 統一處理）
     if shouldReloadWidget {
       WidgetReloader.reloadAll()
     }
   }
-  
+
   /// 將使用者的 level、exp、expToNext 寫入 App Group UserDefaults（供 Widget 等讀取，僅在主線程呼叫）
   /// 使用線程安全的寫入方式，確保資料一致性
   /// - Parameters:
@@ -281,12 +279,10 @@ final class AuthService: ObservableObject {
       return
     }
     
-    // 使用線程安全的方式寫入（雖然已在主線程，但 synchronize 確保立即寫入磁碟）
     defaults.set(level, forKey: Self.appGroupKeys.level)
     defaults.set(exp, forKey: Self.appGroupKeys.exp)
     defaults.set(expToNext, forKey: Self.appGroupKeys.expToNext)
-    defaults.synchronize() // 確保立即寫入，避免競爭條件
-    
+    // synchronize() 已於 iOS 12 後廢棄，系統會自動持久化，不需手動呼叫
     print("✅ [App Group] 已同步等級與經驗值 - Level: \(level), EXP: \(exp)/\(expToNext)")
     
     // 只有在需要時才觸發 Widget 刷新（批次同步時由 syncToWidget 統一處理）
@@ -362,7 +358,6 @@ final class AuthService: ObservableObject {
     
     // 只有在有更新時才同步並刷新
     if hasUpdates {
-      defaults.synchronize() // 確保立即寫入，避免競爭條件
       print("✅ [App Group] 批次同步完成 - displayName: \(displayName ?? "未更新"), level: \(level?.description ?? "未更新"), exp: \(exp?.description ?? "未更新")")
       
       // 統一觸發一次 Widget 刷新（使用防抖機制）
@@ -384,7 +379,6 @@ final class AuthService: ObservableObject {
     defaults.removeObject(forKey: Self.appGroupKeys.displayName)
     defaults.removeObject(forKey: Self.appGroupKeys.avatarURL)
     defaults.removeObject(forKey: Self.appGroupKeys.userId)
-    defaults.synchronize()
   }
   
   /// 強制以目前 Auth session 的 userMetadata 同步到 Supabase user_profiles 與 App Group（登入成功或 App 啟動時呼叫）

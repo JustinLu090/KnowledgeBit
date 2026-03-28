@@ -2,6 +2,12 @@
 // 非同步挑戰：接受挑戰、進行「四選一選擇題」測驗、顯示雙方比對結果
 
 import SwiftUI
+import os
+
+private let logger = Logger(
+  subsystem: Bundle.main.bundleIdentifier ?? "com.knowledgebit",
+  category: "Challenge"
+)
 
 // MARK: - MCQQuestion（內部用，不需 Codable）
 
@@ -47,9 +53,12 @@ struct ChallengeDetailView: View {
   // 挑戰資料
   @State private var challenge: ChallengeSession?
   @State private var challengeCards: [ChallengeCard] = []
+  @State private var quizContent: [ChoiceQuestion] = []   // AI 快照題目
 
   // 測驗狀態
-  @State private var showQuiz = false
+  @State private var showQuiz = false         // 卡片式 MCQ
+  @State private var showChoiceQuiz = false   // AI 快照式填空
+  @State private var choiceQuizStartTime = Date()
   @State private var quizResult: (score: Int, total: Int, timeSpent: TimeInterval, combo: Int)?
 
   // 提交後的最終結果
@@ -59,6 +68,9 @@ struct ChallengeDetailView: View {
 
   // EXP 已發放防重複
   @State private var didGrantExp = false
+
+  // 紙屑特效
+  @State private var showConfetti = false
 
   var body: some View {
     NavigationStack {
@@ -82,7 +94,7 @@ struct ChallengeDetailView: View {
       }
     }
     .task { await loadChallenge() }
-    // 強制四選一模式：以 ChallengeMultipleChoiceQuizView 取代舊版閃卡翻面
+    // 路徑 A：卡片式 MCQ（無 quiz_content 時的 fallback）
     .fullScreenCover(isPresented: $showQuiz) {
       if !challengeCards.isEmpty {
         ChallengeMultipleChoiceQuizView(cards: challengeCards) { score, total, timeSpent, combo in
@@ -93,15 +105,74 @@ struct ChallengeDetailView: View {
         .environmentObject(authService)
       }
     }
+    // 路徑 B：AI 快照題目（quiz_content 存在時，B 看到與 A 完全相同的題目）
+    .fullScreenCover(isPresented: $showChoiceQuiz) {
+      if !quizContent.isEmpty {
+        ChoiceQuizView(
+          questions: quizContent,
+          onFinish: { score, total in
+            let elapsed = Date().timeIntervalSince(choiceQuizStartTime)
+            quizResult = (score, total, elapsed, 0)
+            showChoiceQuiz = false
+            Task { await submitResult(score: score, total: total, timeSpent: elapsed, combo: 0) }
+          }
+        )
+        .environmentObject(authService)
+        .environmentObject(experienceStore)
+      }
+    }
   }
 
   // MARK: - Loading
 
   private var loadingView: some View {
-    VStack(spacing: 16) {
-      ProgressView()
-      Text("載入挑戰中…").foregroundStyle(.secondary)
+    VStack(spacing: 32) {
+      // 脈衝圓環 + 進度指示器
+      ZStack {
+        Circle()
+          .stroke(Color.accentColor.opacity(0.12), lineWidth: 5)
+          .frame(width: 80, height: 80)
+        Circle()
+          .trim(from: 0, to: 0.7)
+          .stroke(
+            LinearGradient(colors: [.accentColor, .accentColor.opacity(0.3)],
+                           startPoint: .leading, endPoint: .trailing),
+            style: StrokeStyle(lineWidth: 5, lineCap: .round)
+          )
+          .frame(width: 80, height: 80)
+          .rotationEffect(.degrees(-90))
+          .animation(.linear(duration: 1.2).repeatForever(autoreverses: false), value: isLoading)
+        Image(systemName: "flag.fill")
+          .font(.system(size: 24))
+          .foregroundStyle(Color.accentColor.opacity(0.7))
+      }
+
+      VStack(spacing: 8) {
+        Text("載入挑戰中…")
+          .font(.title3.bold())
+          .foregroundStyle(.primary)
+        Text("正在從雲端取得題目快照")
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
+      }
+
+      // 骨架佔位卡
+      VStack(spacing: 10) {
+        ForEach(0..<3, id: \.self) { i in
+          RoundedRectangle(cornerRadius: 12)
+            .fill(Color(.secondarySystemGroupedBackground))
+            .frame(height: 52)
+            .opacity(isLoading ? Double(3 - i) / 4.0 : 0)
+            .animation(
+              .easeInOut(duration: 0.9).repeatForever(autoreverses: true)
+                .delay(Double(i) * 0.15),
+              value: isLoading
+            )
+        }
+      }
+      .padding(.horizontal, 32)
     }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 
   private func errorView(message: String) -> some View {
@@ -126,6 +197,14 @@ struct ChallengeDetailView: View {
       resultView(challenge: final)
     } else if challenge.isEffectivelyExpired {
       expiredView(challenge: challenge)
+    } else if challenge.challengerId == authService.currentUserId {
+      // 發起者不能接受自己的挑戰
+      selfChallengeView(challenge: challenge)
+    } else if challenge.respondentId == authService.currentUserId,
+              let prevScore = challenge.respondentScore,
+              let prevTotal = challenge.respondentTotal {
+      // 已挑戰過：顯示紀錄而非再次開始
+      alreadyRespondedView(challenge: challenge, score: prevScore, total: prevTotal)
     } else {
       pendingView(challenge: challenge)
     }
@@ -158,7 +237,23 @@ struct ChallengeDetailView: View {
 
         // 接受挑戰按鈕
         VStack(spacing: 12) {
-          if challengeCards.isEmpty && challenge.wordSetId != nil {
+          if !quizContent.isEmpty {
+            // 路徑 B：AI 快照題目直接開始，不需要再載入
+            Button(action: {
+              choiceQuizStartTime = Date()
+              showChoiceQuiz = true
+            }) {
+              Label("開始挑戰（\(quizContent.count) 題）", systemImage: "flag.fill")
+                .font(.headline)
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 56)
+                .background(Color.accentColor)
+                .cornerRadius(16)
+            }
+            .padding(.horizontal)
+          } else if challengeCards.isEmpty && challenge.wordSetId != nil {
+            // 路徑 A：卡片式，需先載入
             Button(action: { Task { await loadCards(challenge: challenge) } }) {
               Label("載入題目", systemImage: "arrow.down.circle")
                 .font(.headline)
@@ -197,29 +292,41 @@ struct ChallengeDetailView: View {
   // MARK: - Result（比較雙方成績）
 
   private func resultView(challenge: ChallengeSession) -> some View {
-    ScrollView {
-      VStack(spacing: 24) {
-        resultBanner(challenge: challenge)
-        scoreComparisonCard(challenge: challenge)
+    ZStack {
+      ScrollView {
+        VStack(spacing: 24) {
+          resultBanner(challenge: challenge)
+          scoreComparisonCard(challenge: challenge)
 
-        Button(action: { dismiss() }) {
-          Text("完成")
-            .font(.headline)
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity)
-            .frame(height: 56)
-            .background(Color.accentColor)
-            .cornerRadius(16)
+          Button(action: { dismiss() }) {
+            Text("完成")
+              .font(.headline)
+              .foregroundStyle(.white)
+              .frame(maxWidth: .infinity)
+              .frame(height: 56)
+              .background(Color.accentColor)
+              .cornerRadius(16)
+          }
+          .padding(.horizontal)
         }
-        .padding(.horizontal)
+        .padding(.vertical, 24)
       }
-      .padding(.vertical, 24)
+
+      // 紙屑特效層（僅勝出時顯示）
+      ConfettiView(isActive: showConfetti)
+        .ignoresSafeArea()
     }
     .onAppear {
       withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
         showResultAnimation = true
       }
       grantChallengeExp(challenge: challenge)
+      // 接受者贏了才觸發紙屑
+      if challenge.resultForRespondent() == .won {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+          showConfetti = true
+        }
+      }
     }
   }
 
@@ -237,6 +344,87 @@ struct ChallengeDetailView: View {
         .multilineTextAlignment(.center)
         .padding(.horizontal)
     }
+  }
+
+  // MARK: - Self Challenge（發起者不能接受自己的挑戰）
+
+  private func selfChallengeView(challenge: ChallengeSession) -> some View {
+    VStack(spacing: 20) {
+      Image(systemName: "person.fill.questionmark")
+        .font(.system(size: 56))
+        .foregroundStyle(.secondary)
+      Text("這是你自己發起的挑戰")
+        .font(.title2.bold())
+      Text("分享連結給朋友，等待他們應戰吧！")
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+        .padding(.horizontal)
+
+      let shareURL = ChallengeService.deepLink(for: challenge.id)
+      ShareLink(
+        item: shareURL,
+        subject: Text("KnowledgeBit 挑戰"),
+        message: Text("我在「\(challenge.wordSetTitle)」答對了 \(challenge.challengerScore)/\(challenge.challengerTotal) 題，你能超越我嗎？")
+      ) {
+        Label("分享挑戰連結", systemImage: "square.and.arrow.up")
+          .font(.headline)
+          .foregroundStyle(.white)
+          .frame(maxWidth: .infinity)
+          .frame(height: 52)
+          .background(Color.orange)
+          .cornerRadius(16)
+      }
+      .padding(.horizontal)
+    }
+    .padding(.vertical, 40)
+  }
+
+  // MARK: - Already Responded（已挑戰過）
+
+  private func alreadyRespondedView(challenge: ChallengeSession, score: Int, total: Int) -> some View {
+    let accuracy = total > 0 ? Int(Double(score) / Double(total) * 100) : 0
+    return VStack(spacing: 24) {
+      VStack(spacing: 8) {
+        Image(systemName: "checkmark.seal.fill")
+          .font(.system(size: 56))
+          .foregroundStyle(.green)
+        Text("你已挑戰過這題！")
+          .font(.title2.bold())
+        Text("目前最高分為")
+          .foregroundStyle(.secondary)
+      }
+
+      // 成績卡
+      VStack(spacing: 4) {
+        Text("\(score) / \(total)")
+          .font(.system(size: 48, weight: .black, design: .rounded))
+          .foregroundStyle(.primary)
+        Text("正確率 \(accuracy)%")
+          .font(.title3)
+          .foregroundStyle(accuracy >= 80 ? .green : accuracy >= 50 ? .orange : .red)
+      }
+      .padding(24)
+      .frame(maxWidth: .infinity)
+      .background(Color(.secondarySystemGroupedBackground))
+      .cornerRadius(20)
+      .padding(.horizontal)
+
+      Text("挑戰結果已記錄，無法重複作答。")
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
+
+      Button(action: { dismiss() }) {
+        Text("關閉")
+          .font(.headline)
+          .foregroundStyle(.white)
+          .frame(maxWidth: .infinity)
+          .frame(height: 52)
+          .background(Color.accentColor)
+          .cornerRadius(16)
+      }
+      .padding(.horizontal)
+    }
+    .padding(.vertical, 40)
   }
 
   // MARK: - Sub-components
@@ -417,8 +605,18 @@ struct ChallengeDetailView: View {
     do {
       let ch = try await service.fetchChallenge(id: challengeId)
       challenge = ch
-      if let wsId = ch.wordSetId, ch.isPending {
-        challengeCards = (try? await service.fetchChallengeCards(wordSetId: wsId)) ?? []
+      if ch.isPending {
+        if let content = ch.quizContent, !content.isEmpty {
+          // 優先路徑：使用 AI 快照題目，B 與 A 看到完全相同的題目
+          quizContent = content
+          logger.debug("Using cached AI quiz content for challenge: \(challengeId)")
+        } else if let fixedIds = ch.shuffledCardIds, !fixedIds.isEmpty {
+          // 次優路徑：依固定卡片 ID 順序載入
+          challengeCards = (try? await service.fetchChallengeCardsByIds(fixedIds)) ?? []
+        } else if let wsId = ch.wordSetId {
+          // Fallback：依字集隨機抓取
+          challengeCards = (try? await service.fetchChallengeCards(wordSetId: wsId)) ?? []
+        }
       }
     } catch {
       errorMessage = error.localizedDescription
@@ -427,10 +625,14 @@ struct ChallengeDetailView: View {
   }
 
   private func loadCards(challenge: ChallengeSession) async {
-    guard let wsId = challenge.wordSetId else { return }
     let service = ChallengeService(authService: authService)
     do {
-      challengeCards = try await service.fetchChallengeCards(wordSetId: wsId)
+      // 同樣優先使用固定卡片順序
+      if let fixedIds = challenge.shuffledCardIds, !fixedIds.isEmpty {
+        challengeCards = try await service.fetchChallengeCardsByIds(fixedIds)
+      } else if let wsId = challenge.wordSetId {
+        challengeCards = try await service.fetchChallengeCards(wordSetId: wsId)
+      }
     } catch {
       errorMessage = "無法載入題目：\(error.localizedDescription)"
     }
@@ -463,13 +665,21 @@ struct ChallengeDetailView: View {
 
   // MARK: - EXP 獎勵
 
+  /// 持久化已發放 EXP 的挑戰 ID 集合，防止重複發放（跨 Session）
+  private static let rewardedKey = "kb_rewarded_challenge_ids"
+
   private func grantChallengeExp(challenge: ChallengeSession) {
-    guard !didGrantExp,
+    let key = challenge.id.uuidString
+    var rewarded = Set(UserDefaults.standard.stringArray(forKey: Self.rewardedKey) ?? [])
+    guard !rewarded.contains(key),
           authService.currentUserId == challenge.respondentId else { return }
     let result = challenge.resultForRespondent()
     let exp = result == .won ? 30 : (result == .tied ? 15 : 10)
     experienceStore.addExp(delta: exp)
+    rewarded.insert(key)
+    UserDefaults.standard.set(Array(rewarded), forKey: Self.rewardedKey)
     didGrantExp = true
+    logger.info("Granted \(exp) EXP for challenge \(key) (result: \(String(describing: result)))")
   }
 }
 

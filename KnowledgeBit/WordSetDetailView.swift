@@ -197,6 +197,7 @@ struct WordSetDetailView: View {
         .environmentObject(taskService)
         .environmentObject(experienceStore)
         .environmentObject(questService)
+        .environmentObject(authService)
     }
     .sheet(isPresented: $showingCollaboratorPicker) {
       CollaboratorPickerView(
@@ -353,12 +354,17 @@ struct WordSetDetailView: View {
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
     } else if let q = generatedQuestions, !q.isEmpty {
-      ChoiceQuizView(questions: q) { score, total in
-        recordChoiceQuizResult(score: score, total: total)
-        showingChoiceQuiz = false
-        generatedQuestions = nil
-        quizGenerationTask = nil
-      }
+      ChoiceQuizView(
+        questions: q,
+        onFinish: { score, total in
+          recordChoiceQuizResult(score: score, total: total)
+          showingChoiceQuiz = false
+          generatedQuestions = nil
+          quizGenerationTask = nil
+        },
+        wordSetId: wordSet.id,
+        wordSetTitle: wordSet.title
+      )
     } else if generatedQuestions != nil {
       VStack(spacing: 16) {
         Text("未產生題目")

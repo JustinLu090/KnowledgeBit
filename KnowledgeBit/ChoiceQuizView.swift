@@ -7,6 +7,10 @@ struct ChoiceQuizView: View {
   let questions: [ChoiceQuestion]
   let onFinish: (Int, Int) -> Void
 
+  /// 可選：傳入後才在結算頁顯示「發送挑戰」按鈕
+  var wordSetId: UUID? = nil
+  var wordSetTitle: String? = nil
+
   @Environment(\.dismiss) var dismiss
   @State private var currentIndex = 0
   @State private var score = 0
@@ -16,6 +20,9 @@ struct ChoiceQuizView: View {
   @State private var showExitConfirmation = false
   /// 每題選項順序（onAppear 時打亂一次，避免正確答案總在同一位置）
   @State private var shuffledOptionsPerQuestion: [[String]] = []
+  /// 計時：用於挑戰好友功能
+  @State private var sessionStartTime = Date()
+  @State private var quizTimeSpent: TimeInterval = 0
 
   private var currentQuestion: ChoiceQuestion? {
     guard currentIndex >= 0, currentIndex < questions.count else { return nil }
@@ -66,7 +73,12 @@ struct ChoiceQuizView: View {
             score = 0
             selectedOption = nil
             hasAnswered = false
-          }
+            sessionStartTime = Date()
+          },
+          wordSetId: wordSetId,
+          wordSetTitle: wordSetTitle,
+          timeSpent: quizTimeSpent,
+          quizContent: wordSetId != nil ? questions : nil  // 只有挑戰入口才上傳快照
         )
       } else if let q = currentQuestion {
         ZStack {
@@ -127,6 +139,7 @@ struct ChoiceQuizView: View {
     .onAppear {
       if shuffledOptionsPerQuestion.isEmpty {
         shuffledOptionsPerQuestion = questions.map { $0.options.shuffled() }
+        sessionStartTime = Date()
       }
     }
   }
@@ -328,6 +341,7 @@ struct ChoiceQuizView: View {
       selectedOption = nil
       hasAnswered = false
     } else {
+      quizTimeSpent = Date().timeIntervalSince(sessionStartTime)
       showResult = true
     }
   }

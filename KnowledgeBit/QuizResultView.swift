@@ -11,6 +11,10 @@ struct QuizResultView: View {
   var wordSetId: UUID? = nil
   var wordSetTitle: String? = nil
   var timeSpent: TimeInterval = 0
+  /// 本次測驗的卡片 ID 清單（已洗牌順序），用於固定題目挑戰
+  var cardIds: [UUID] = []
+  /// AI 生成的完整題目快照，傳入後存進 Supabase 供 B 直接使用
+  var quizContent: [ChoiceQuestion]? = nil
 
   @EnvironmentObject var experienceStore: ExperienceStore
   @EnvironmentObject var questService: DailyQuestService
@@ -271,7 +275,9 @@ struct QuizResultView: View {
         wordSetTitle: wordSetTitle,
         score: rememberedCards,
         total: totalCards,
-        timeSpent: timeSpent
+        timeSpent: timeSpent,
+        cardIds: cardIds,
+        quizContent: quizContent
       )
       challengeURL = ChallengeService.deepLink(for: id)
     } catch {
