@@ -4,6 +4,7 @@
 import SwiftUI
 import SwiftData
 import WidgetKit
+import os
 
 struct WordSetDetailView: View {
   @Bindable var wordSet: WordSet
@@ -235,7 +236,7 @@ struct WordSetDetailView: View {
     do {
       collaborators = try await service.fetchCollaborators(wordSetId: wordSet.id)
     } catch {
-      print("⚠️ [WordSet] fetchCollaborators 失敗: \(error)")
+      AppLog.wordset.info("⚠️ [WordSet] fetchCollaborators 失敗: \(error)")
     }
   }
 
@@ -256,7 +257,7 @@ struct WordSetDetailView: View {
       // 使用者快速離開畫面時 task 會被取消，屬於預期行為，不當作失敗
       let ns = error as NSError
       if ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled { return }
-      print("⚠️ [WordSet] loadActiveBattleIfNeeded 失敗: \(error)")
+      AppLog.wordset.info("⚠️ [WordSet] loadActiveBattleIfNeeded 失敗: \(error)")
     }
   }
 
@@ -408,7 +409,7 @@ struct WordSetDetailView: View {
           }
         }
       } catch {
-        print("❌ Failed to delete card: \(error.localizedDescription)")
+        AppLog.wordset.info("❌ Failed to delete card: \(error.localizedDescription)")
       }
     }
   }
@@ -604,7 +605,7 @@ private struct CollaboratorPickerView: View {
   /// 發送邀請給選取的好友（對方需在社群接受後才會加入共編）
   private func sendInvitations() async {
     guard let currentUserId = authService.currentUserId else {
-      print("⚠️ [WordSet] sendInvitations 跳過：無 currentUserId")
+      AppLog.wordset.info("⚠️ [WordSet] sendInvitations 跳過：無 currentUserId")
       return
     }
     let invitationService = WordSetInvitationService(authService: authService, userId: currentUserId)
@@ -612,7 +613,7 @@ private struct CollaboratorPickerView: View {
     let toInvite = localSelection.filter {
       !initialSelectedIds.contains($0) && !pendingInviterIds.contains($0) && !pendingInviteeIds.contains($0)
     }
-    print("[WordSet] 邀請共編：wordSetId=\(wordSetId), 將發送給 \(toInvite.count) 人, targetUserIds=\(toInvite.map(\.uuidString))")
+    AppLog.wordset.info("[WordSet] 邀請共編：wordSetId=\(wordSetId), 將發送給 \(toInvite.count) 人, targetUserIds=\(toInvite.map(\.uuidString))")
     var successCount = 0
     var failureCount = 0
     var succeededIds: [UUID] = []
@@ -621,15 +622,15 @@ private struct CollaboratorPickerView: View {
         try await invitationService.sendInvitation(wordSetId: wordSetId, inviteeId: inviteeId)
         successCount += 1
         succeededIds.append(inviteeId)
-        print("✅ [WordSet] sendInvitation Success: inviteeId=\(inviteeId)")
+        AppLog.wordset.info("✅ [WordSet] sendInvitation Success: inviteeId=\(inviteeId)")
       } catch {
         failureCount += 1
         let errMsg = String(describing: error)
-        print("❌ [WordSet] sendInvitation Error: inviteeId=\(inviteeId), error=\(error)")
+        AppLog.wordset.info("❌ [WordSet] sendInvitation Error: inviteeId=\(inviteeId), error=\(error)")
         lastSendInvitationError = errMsg
       }
     }
-    print("[WordSet] 邀請結果：Success=\(successCount), Error=\(failureCount)")
+    AppLog.wordset.info("[WordSet] 邀請結果：Success=\(successCount), Error=\(failureCount)")
     await MainActor.run {
       // 發送成功的人加入「邀請中」，並從選取中移除
       for id in succeededIds {

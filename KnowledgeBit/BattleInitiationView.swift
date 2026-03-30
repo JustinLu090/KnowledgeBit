@@ -2,6 +2,7 @@
 // 發起對戰：選擇共編成員，準備好後由發起人開始戰鬥
 
 import SwiftUI
+import os
 
 struct BattleInitiationView: View {
   let wordSetID: UUID
@@ -197,7 +198,7 @@ struct BattleInitiationView: View {
           errorMessage = "無法載入共編成員"
           isLoading = false
         }
-        print("⚠️ [BattleInitiation] fetchCollaborators 失敗: \(error)")
+        AppLog.battle.info("⚠️ [BattleInitiation] fetchCollaborators 失敗: \(error)")
       }
     }
   }

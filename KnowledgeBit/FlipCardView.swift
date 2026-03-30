@@ -3,6 +3,22 @@
 
 import SwiftUI
 
+/// 依字數調整字卡內文起始字級，搭配 `minimumScaleFactor` 讓長文仍能 fit 固定高度區域。
+enum FlashcardTextSizing {
+  static func fontSize(for text: String, base: CGFloat) -> CGFloat {
+    let count = text.count
+    let factor: CGFloat
+    switch count {
+    case 0 ... 40: factor = 1.0
+    case 41 ... 80: factor = 0.92
+    case 81 ... 140: factor = 0.82
+    case 141 ... 220: factor = 0.72
+    default: factor = 0.62
+    }
+    return max(11, base * factor)
+  }
+}
+
 struct FlipCardView: View {
   let card: Card
   @Binding var isFlipped: Bool
@@ -43,25 +59,26 @@ struct FlipCardView: View {
       RoundedRectangle(cornerRadius: 20)
         .fill(Color.blue.opacity(0.1))
         .shadow(radius: 5)
-      
-      VStack {
-        // Top label - aligned to leading
+
+      VStack(alignment: .leading, spacing: 0) {
         Text("❓ 問題")
           .font(.caption)
           .foregroundStyle(.secondary)
           .frame(maxWidth: .infinity, alignment: .leading)
-          .padding()
-        
-        Spacer()
-        
-        // Center question text
-        Text(card.title)
-          .font(.title)
-          .bold()
-          .multilineTextAlignment(.center)
-          .padding()
-        
-        Spacer()
+          .padding(.horizontal)
+          .padding(.top, 12)
+          .padding(.bottom, 8)
+
+        GeometryReader { geo in
+          Text(card.title)
+            .font(.system(size: FlashcardTextSizing.fontSize(for: card.title, base: 28), weight: .bold))
+            .multilineTextAlignment(.center)
+            .minimumScaleFactor(0.32)
+            .lineLimit(nil)
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .center)
+        }
+        .padding(.horizontal, 8)
+        .padding(.bottom, 16)
       }
     }
   }
@@ -74,25 +91,26 @@ struct FlipCardView: View {
       RoundedRectangle(cornerRadius: 20)
         .fill(Color.blue.opacity(0.1))
         .shadow(radius: 5)
-      
-      VStack {
-        // Top label - aligned to leading
+
+      VStack(alignment: .leading, spacing: 0) {
         Text("💡 答案")
           .font(.caption)
           .foregroundStyle(.secondary)
           .frame(maxWidth: .infinity, alignment: .leading)
-          .padding()
-        
-        Spacer()
-        
-        // Center answer text
-        Text(card.content)
-          .font(.title)
-          .bold()
-          .multilineTextAlignment(.center)
-          .padding()
-        
-        Spacer()
+          .padding(.horizontal)
+          .padding(.top, 12)
+          .padding(.bottom, 8)
+
+        GeometryReader { geo in
+          Text(card.content)
+            .font(.system(size: FlashcardTextSizing.fontSize(for: card.content, base: 26), weight: .bold))
+            .multilineTextAlignment(.center)
+            .minimumScaleFactor(0.28)
+            .lineLimit(nil)
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .center)
+        }
+        .padding(.horizontal, 8)
+        .padding(.bottom, 16)
       }
     }
   }

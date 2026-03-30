@@ -6,6 +6,7 @@ import SwiftData
 import Supabase
 import Auth
 import GoogleSignIn
+import os
 
 struct LoginView: View {
   @EnvironmentObject var auth: AuthService
@@ -161,7 +162,7 @@ struct LoginView: View {
       
     } catch {
       errorMessage = error.localizedDescription
-      print("❌ Google 登入錯誤: \(error)")
+      AppLog.auth.info("❌ Google 登入錯誤: \(error)")
     }
   }
   
@@ -185,7 +186,7 @@ struct LoginView: View {
         let (data, _) = try await URLSession.shared.data(from: url)
         avatarData = data
       } catch {
-        print("⚠️ 無法下載 Google 頭貼: \(error)")
+        AppLog.auth.info("⚠️ 無法下載 Google 頭貼: \(error)")
       }
     }
     
@@ -263,9 +264,9 @@ struct LoginView: View {
           .eq(AppGroup.SupabaseFields.userId, value: userId)
           .execute()
       }
-      print("✅ [Login] 已同步 display_name、avatar_url 至 Supabase user_profiles")
+      AppLog.auth.info("✅ [Login] 已同步 display_name、avatar_url 至 Supabase user_profiles")
     } catch {
-      print("⚠️ [Login] Supabase user_profiles 同步失敗: \(error.localizedDescription)")
+      AppLog.auth.info("⚠️ [Login] Supabase user_profiles 同步失敗: \(error.localizedDescription)")
     }
   }
 }

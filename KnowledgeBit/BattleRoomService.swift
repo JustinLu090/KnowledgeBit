@@ -3,6 +3,7 @@
 
 import Foundation
 import Supabase
+import os
 
 struct BoardCellDTO: Decodable {
   let id: Int
@@ -87,7 +88,7 @@ final class BattleRoomService {
     let key = inFlightKey(roomId: roomId, hourBucket: hourBucket)
     guard !inFlightKeys.contains(key) else {
       #if DEBUG
-      print("[Battle] submitAllocations: \(key) already in flight at service layer, skipping")
+      AppLog.battle.info("[Battle] submitAllocations: \(key) already in flight at service layer, skipping")
       #endif
       return
     }
@@ -118,9 +119,9 @@ final class BattleRoomService {
       do {
         #if DEBUG
         if attempt > 1 {
-          print("[Battle] submit_battle_allocations retry \(attempt)/\(maxAttempts)")
+          AppLog.battle.info("[Battle] submit_battle_allocations retry \(attempt)/\(maxAttempts)")
         } else {
-          print("[Battle] RPC submit_battle_allocations room=\(roomId) bucket=\(hourString) bucketSeconds=\(bucketSeconds) allocations=", strDict)
+          AppLog.battle.info("[Battle] RPC submit_battle_allocations room=\(roomId) bucket=\(hourString) bucketSeconds=\(bucketSeconds) allocations=\(String(describing: strDict), privacy: .public)")
         }
         #endif
         _ = try await client.rpc("submit_battle_allocations", params: params).execute()
@@ -198,7 +199,7 @@ final class BattleRoomService {
     let red = row.red_allocations.map { parseAllocations($0.dict) } ?? [:]
     #if DEBUG
     if !blue.isEmpty || !red.isEmpty {
-      print("[Battle] fetchRoundSummary blue=\(blue) red=\(red)")
+      AppLog.battle.info("[Battle] fetchRoundSummary blue=\(blue) red=\(red)")
     }
     #endif
     return BattleRoundSummary(blueAllocations: blue, redAllocations: red)
@@ -212,7 +213,7 @@ final class BattleRoomService {
 
     struct Row: Decodable { let cells: [BoardCellDTO] }
     #if DEBUG
-    print("[Battle] RPC get_battle_board_state room=\(roomId) bucket=\(hourString) bucketSeconds=\(bucketSeconds)")
+    AppLog.battle.info("[Battle] RPC get_battle_board_state room=\(roomId) bucket=\(hourString) bucketSeconds=\(bucketSeconds)")
     #endif
 
     let rows: [Row] = try await client

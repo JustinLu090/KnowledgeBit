@@ -7,6 +7,7 @@ import Combine
 import Supabase
 import GoogleSignIn
 import WidgetKit
+import os
 
 @MainActor
 final class AuthService: ObservableObject {
@@ -211,7 +212,7 @@ final class AuthService: ObservableObject {
       
     } catch {
       errorMessage = error.localizedDescription
-      print("❌ Google 登入錯誤: \(error)")
+      AppLog.auth.error("Google 登入錯誤: \(error.localizedDescription, privacy: .public)")
     }
   }
   
@@ -242,7 +243,7 @@ final class AuthService: ObservableObject {
     }
     
     guard let defaults = appGroupDefaults else {
-      print("⚠️ [App Group] sharedUserDefaults 為 nil，請確認 Signing & Capabilities 已設定 App Groups")
+      AppLog.auth.notice("[App Group] sharedUserDefaults 為 nil，請確認 Signing & Capabilities 已設定 App Groups")
       return
     }
     
@@ -275,7 +276,7 @@ final class AuthService: ObservableObject {
     }
     
     guard let defaults = appGroupDefaults else {
-      print("⚠️ [App Group] sharedUserDefaults 為 nil，請確認 Signing & Capabilities 已設定 App Groups")
+      AppLog.auth.notice("[App Group] sharedUserDefaults 為 nil，請確認 Signing & Capabilities 已設定 App Groups")
       return
     }
     
@@ -283,7 +284,7 @@ final class AuthService: ObservableObject {
     defaults.set(exp, forKey: Self.appGroupKeys.exp)
     defaults.set(expToNext, forKey: Self.appGroupKeys.expToNext)
     // synchronize() 已於 iOS 12 後廢棄，系統會自動持久化，不需手動呼叫
-    print("✅ [App Group] 已同步等級與經驗值 - Level: \(level), EXP: \(exp)/\(expToNext)")
+    AppLog.auth.info("[App Group] 已同步等級與經驗值 - Level: \(level), EXP: \(exp)/\(expToNext)")
     
     // 只有在需要時才觸發 Widget 刷新（批次同步時由 syncToWidget 統一處理）
     if shouldReloadWidget {
@@ -315,7 +316,7 @@ final class AuthService: ObservableObject {
     }
     
     guard let defaults = appGroupDefaults else {
-      print("⚠️ [App Group] sharedUserDefaults 為 nil，請確認 Signing & Capabilities 已設定 App Groups")
+      AppLog.auth.notice("[App Group] sharedUserDefaults 為 nil，請確認 Signing & Capabilities 已設定 App Groups")
       return
     }
     
@@ -358,7 +359,7 @@ final class AuthService: ObservableObject {
     
     // 只有在有更新時才同步並刷新
     if hasUpdates {
-      print("✅ [App Group] 批次同步完成 - displayName: \(displayName ?? "未更新"), level: \(level?.description ?? "未更新"), exp: \(exp?.description ?? "未更新")")
+      AppLog.auth.info("[App Group] 批次同步完成 - displayName: \(displayName ?? "未更新"), level: \(level?.description ?? "未更新"), exp: \(exp?.description ?? "未更新")")
       
       // 統一觸發一次 Widget 刷新（使用防抖機制）
       WidgetReloader.reloadAll()
@@ -432,7 +433,7 @@ final class AuthService: ObservableObject {
     do {
       try await performSync()
       lastProfileSyncTime = Date()
-      print("✅ [Auth] 已強制同步 display_name、avatar_url 至 Supabase 與 App Group")
+      AppLog.auth.info("[Auth] 已強制同步 display_name、avatar_url 至 Supabase 與 App Group")
     } catch {
       let desc = error.localizedDescription
       let isRetryable = desc.contains("520") || desc.contains("Status Code: 5")
@@ -441,12 +442,12 @@ final class AuthService: ObservableObject {
         do {
           try await performSync()
           lastProfileSyncTime = Date()
-          print("✅ [Auth] 已強制同步 display_name、avatar_url 至 Supabase 與 App Group（重試成功）")
+          AppLog.auth.info("[Auth] 已強制同步 display_name、avatar_url 至 Supabase 與 App Group（重試成功）")
         } catch {
-          print("⚠️ [Auth] 同步 user_profiles 失敗（含重試）: \(error.localizedDescription)")
+          AppLog.auth.notice("[Auth] 同步 user_profiles 失敗（含重試）: \(error.localizedDescription, privacy: .public)")
         }
       } else {
-        print("⚠️ [Auth] 同步 user_profiles 失敗: \(desc)")
+        AppLog.auth.notice("[Auth] 同步 user_profiles 失敗: \(desc, privacy: .public)")
       }
     }
   }
@@ -459,7 +460,7 @@ final class AuthService: ObservableObject {
     }
     let path = "\(userId.uuidString)/avatar.jpg"
     #if DEBUG
-    print("📤 [UploadAvatar] path=\(path), userId=\(userId.uuidString)")
+    AppLog.auth.debug("UploadAvatar path=\(path, privacy: .public), userId=\(userId.uuidString, privacy: .public)")
     #endif
     let bucket = "avatars"  // 需與 Dashboard 的 bucket 名稱完全一致（含大小寫）
     _ = try await client.storage
@@ -492,9 +493,9 @@ final class AuthService: ObservableObject {
       try await client.from("user_profiles")
         .upsert(payload, onConflict: AppGroup.SupabaseFields.userId)
         .execute()
-      print("✅ [Auth] 已同步 profile 至遠端")
+      AppLog.auth.info("[Auth] 已同步 profile 至遠端")
     } catch {
-      print("⚠️ [Auth] 同步 user_profiles 失敗: \(error.localizedDescription)")
+      AppLog.auth.notice("[Auth] 同步 user_profiles 失敗: \(error.localizedDescription, privacy: .public)")
     }
   }
   

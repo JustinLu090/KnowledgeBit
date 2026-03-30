@@ -6,6 +6,7 @@ import SwiftUI
 import UIKit
 import SwiftData
 import Foundation
+import os
 
 // MARK: - Heatmap Data Model
 
@@ -562,7 +563,7 @@ struct StudyHeatmapView: View {
       // Clear selected day after deletion
       selectedDay = nil
     } catch {
-      print("Failed to delete study logs: \(error)")
+      AppLog.heatmap.info("Failed to delete study logs: \(error)")
       #if canImport(UIKit)
       HapticFeedbackHelper.notification(UINotificationFeedbackGenerator.FeedbackType.error)
       #endif

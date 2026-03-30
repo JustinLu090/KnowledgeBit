@@ -184,7 +184,7 @@ struct QuizView: View {
 
       // 進度文字
       if !shuffledCards.isEmpty {
-        Text("Question \(currentCardIndex + 1) / \(shuffledCards.count)")
+        Text("第 \(currentCardIndex + 1) / \(shuffledCards.count) 題")
           .font(.caption)
           .foregroundStyle(.secondary)
           .padding(.top)
@@ -274,22 +274,25 @@ struct QuizView: View {
         .fill(Color.blue.opacity(0.1))
         .shadow(radius: 5)
 
-      VStack {
+      VStack(alignment: .leading, spacing: 0) {
         Text("❓ 問題")
           .font(.caption)
           .foregroundStyle(.secondary)
           .frame(maxWidth: .infinity, alignment: .leading)
-          .padding()
+          .padding(.horizontal)
+          .padding(.top, 12)
+          .padding(.bottom, 8)
 
-        Spacer()
-
-        Text(shuffledCards[currentCardIndex].title)
-          .font(.title)
-          .bold()
-          .multilineTextAlignment(.center)
-          .padding()
-
-        Spacer()
+        GeometryReader { geo in
+          Text(shuffledCards[currentCardIndex].title)
+            .font(.system(size: FlashcardTextSizing.fontSize(for: shuffledCards[currentCardIndex].title, base: 28), weight: .bold))
+            .multilineTextAlignment(.center)
+            .minimumScaleFactor(0.32)
+            .lineLimit(nil)
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .center)
+        }
+        .padding(.horizontal, 8)
+        .padding(.bottom, 16)
       }
     }
     .frame(height: 400)

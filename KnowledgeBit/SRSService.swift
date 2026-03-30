@@ -5,6 +5,7 @@ import Foundation
 import SwiftData
 #if os(iOS)
 import WidgetKit
+import os
 #endif
 
 enum ReviewResult {
@@ -58,7 +59,7 @@ class SRSService {
     if let sharedDefaults = UserDefaults(suiteName: AppGroup.identifier) {
       self.userDefaults = sharedDefaults
     } else {
-      print("⚠️ [SRS] 無法取得 App Group UserDefaults，回退到標準 UserDefaults")
+      AppLog.srs.info("⚠️ [SRS] 無法取得 App Group UserDefaults，回退到標準 UserDefaults")
       self.userDefaults = .standard
     }
   }
@@ -76,7 +77,7 @@ class SRSService {
     do {
       return try context.fetch(descriptor)
     } catch {
-      print("❌ [SRS] 查詢到期卡片失敗: \(error.localizedDescription)")
+      AppLog.srs.info("❌ [SRS] 查詢到期卡片失敗: \(error.localizedDescription)")
       return []
     }
   }
@@ -91,9 +92,9 @@ class SRSService {
     card.dueAt = now.addingTimeInterval(m.dueInterval)
     switch result {
     case .remembered:
-      print("✅ [SRS] 記得 - Level \(oldLevel) → \(card.srsLevel), 下次複習: \(card.dueAt)")
+      AppLog.srs.info("✅ [SRS] 記得 - Level \(oldLevel) → \(card.srsLevel), 下次複習: \(card.dueAt)")
     case .forgotten:
-      print("❌ [SRS] 不記得 - Level \(oldLevel) → \(card.srsLevel), 10 分鐘後再複習")
+      AppLog.srs.info("❌ [SRS] 不記得 - Level \(oldLevel) → \(card.srsLevel), 10 分鐘後再複習")
     }
     card.lastReviewedAt = now
     

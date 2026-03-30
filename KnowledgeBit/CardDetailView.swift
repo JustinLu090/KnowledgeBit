@@ -3,6 +3,7 @@ import SwiftUI
 import SwiftData
 import WidgetKit
 import Combine
+import os
 
 struct CardDetailView: View {
   @Bindable var card: Card
@@ -78,7 +79,7 @@ struct CardDetailView: View {
         }
         dismiss()
       } catch {
-        print("❌ Failed to delete card: \(error.localizedDescription)")
+        AppLog.card.info("❌ Failed to delete card: \(error.localizedDescription)")
       }
     }
   }

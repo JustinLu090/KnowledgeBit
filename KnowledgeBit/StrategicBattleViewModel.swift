@@ -5,6 +5,7 @@ import Foundation
 import SwiftUI
 import Combine
 import Supabase
+import os
 
 @MainActor
 final class StrategicBattleViewModel: ObservableObject {
@@ -136,7 +137,7 @@ final class StrategicBattleViewModel: ObservableObject {
     let bucket = currentBucket()
     do {
       #if DEBUG
-      print("[Battle] loadInitialBoard bucket=\(bucket) bucketSeconds=\(settlementBucketSeconds)")
+      AppLog.battle.info("[Battle] loadInitialBoard bucket=\(bucket) bucketSeconds=\(self.settlementBucketSeconds)")
       #endif
       let dtos = try await service.fetchBoardState(roomId: rid, hourBucket: bucket, bucketSeconds: settlementBucketSeconds)
       if dtos.count == 16 {
@@ -157,7 +158,7 @@ final class StrategicBattleViewModel: ObservableObject {
       if let loaded = pendingStore.load(roomId: rid, hourBucket: bucket), !loaded.isEmpty {
         pendingKE = loaded
         #if DEBUG
-        print("[Battle] restore pendingKE from store:", loaded)
+        AppLog.battle.info("[Battle] restore pendingKE from store: \(String(describing: loaded), privacy: .public)")
         #endif
       }
       // 還原跨 session 持久化的失敗提交佇列
@@ -165,7 +166,7 @@ final class StrategicBattleViewModel: ObservableObject {
       if !savedFailed.isEmpty {
         failedSubmissions.merge(savedFailed) { _, new in new }
         #if DEBUG
-        print("[Battle] restored \(savedFailed.count) failed submission(s) from persistence")
+        AppLog.battle.info("[Battle] restored \(savedFailed.count) failed submission(s) from persistence")
         #endif
       }
       // 載入上一輪的雙方動作統整，一進畫面就顯示（含雙方皆未投入時）
@@ -184,7 +185,7 @@ final class StrategicBattleViewModel: ObservableObject {
       }
     } catch {
       #if DEBUG
-      print("[Battle] loadInitialBoard error:", error)
+      AppLog.battle.info("[Battle] loadInitialBoard error: \(error.localizedDescription, privacy: .public)")
       #endif
       // Keep bootstrap board on error
     }
@@ -221,20 +222,20 @@ final class StrategicBattleViewModel: ObservableObject {
       try await channel.subscribeWithError()
     } catch {
       #if DEBUG
-      print("[Battle] Realtime subscribe failed: \(error)")
+      AppLog.battle.info("[Battle] Realtime subscribe failed: \(error)")
       #endif
       return
     }
     isRealtimeActive = true
 
     #if DEBUG
-    print("[Battle] Realtime subscribed to battle_cells for room \(rid)")
+    AppLog.battle.info("[Battle] Realtime subscribed to battle_cells for room \(rid)")
     #endif
 
     for await _ in changeStream {
       guard !Task.isCancelled else { break }
       #if DEBUG
-      print("[Battle] Realtime: battle_cells changed, refreshing board")
+      AppLog.battle.info("[Battle] Realtime: battle_cells changed, refreshing board")
       #endif
       await refreshBoardFromRealtime()
     }
@@ -405,7 +406,7 @@ final class StrategicBattleViewModel: ObservableObject {
 
   func settleHour() {
     #if DEBUG
-    print("[Battle] settleHour() called; pendingKE =", pendingKE, "remainingKE =", remainingKE)
+    AppLog.battle.info("[Battle] settleHour() called; pendingKE=\(String(describing: self.pendingKE), privacy: .public) remainingKE=\(self.remainingKE)")
     #endif
     if let rid = roomId, let service = battleRoomService {
       settleHourWithCloud(roomId: rid, service: service)
@@ -422,7 +423,7 @@ final class StrategicBattleViewModel: ObservableObject {
     // ① Guard: prevent double-settlement for the same bucket (timer double-fire protection)
     guard !submissionsInFlight.contains(bucketKey) else {
       #if DEBUG
-      print("[Battle] bucket \(previousHourBucket) already in flight, skipping double-settlement")
+      AppLog.battle.info("[Battle] bucket \(previousHourBucket) already in flight, skipping double-settlement")
       #endif
       return
     }
@@ -435,7 +436,7 @@ final class StrategicBattleViewModel: ObservableObject {
     let beforeCells = cells
 
     #if DEBUG
-    print("[Battle] settleHourWithCloud room=\(rid) prevBucket=\(previousHourBucket) newBucket=\(newHourBucket) bucketSeconds=\(settlementBucketSeconds) pendingKE=", currentAllocations, "failedBuckets=", failedSubmissions.keys.map { Int($0.timeIntervalSince1970) }.sorted())
+    AppLog.battle.info("[Battle] settleHourWithCloud room=\(rid) prevBucket=\(previousHourBucket) newBucket=\(newHourBucket) bucketSeconds=\(self.settlementBucketSeconds) pendingKE=\(String(describing: currentAllocations), privacy: .public) failedBuckets=\(String(describing: self.failedSubmissions.keys.map { Int($0.timeIntervalSince1970) }.sorted()), privacy: .public)")
     #endif
 
     Task { @MainActor in
@@ -455,11 +456,11 @@ final class StrategicBattleViewModel: ObservableObject {
             failedSubmissions.removeValue(forKey: failedBucket)
             pendingStore.remove(roomId: rid, hourBucket: failedBucket)
             #if DEBUG
-            print("[Battle] retry succeeded for failed bucket \(failedBucket)")
+            AppLog.battle.info("[Battle] retry succeeded for failed bucket \(failedBucket)")
             #endif
           } catch {
             #if DEBUG
-            print("[Battle] retry still failed for bucket \(failedBucket): \(error)")
+            AppLog.battle.info("[Battle] retry still failed for bucket \(failedBucket): \(error)")
             #endif
             // Keep in failedSubmissions for the next settlement cycle
           }
@@ -482,14 +483,14 @@ final class StrategicBattleViewModel: ObservableObject {
         // ⑤ Fetch updated board state
         var dtos = try await service.fetchBoardState(roomId: rid, hourBucket: newHourBucket, bucketSeconds: settlementBucketSeconds)
         #if DEBUG
-        print("[Battle] after settlement board cells count=", dtos.count)
+        AppLog.battle.info("[Battle] after settlement board cells count=\(dtos.count)")
         #endif
 
         let beforePlayerCount = beforeCells.filter { $0.owner == .player }.count
         let newPlayerCount = dtos.filter { $0.owner == "player" }.count
         if currentAllocations.isEmpty, beforePlayerCount > 0, newPlayerCount == 0 {
           #if DEBUG
-          print("[Battle] new board has 0 player cells (suspicious), refetching once...")
+          AppLog.battle.info("[Battle] new board has 0 player cells (suspicious), refetching once...")
           #endif
           try? await Task.sleep(nanoseconds: 400_000_000)
           if let refetched = try? await service.fetchBoardState(roomId: rid, hourBucket: newHourBucket, bucketSeconds: settlementBucketSeconds), refetched.count == 16 {
@@ -514,9 +515,7 @@ final class StrategicBattleViewModel: ObservableObject {
             for id in currentAllocations.keys.sorted() {
               let before = beforeCells[id]
               let after = newCells[id]
-              print("[Battle][Debug] cell", id,
-                    "owner", before.owner.rawValue, "->", after.owner.rawValue,
-                    "hp", before.hpNow, "->", after.hpNow)
+              AppLog.battle.info("[Battle][Debug] cell \(id) owner \(before.owner.rawValue) -> \(after.owner.rawValue) hp \(before.hpNow) -> \(after.hpNow)")
             }
           }
           #endif
@@ -529,7 +528,7 @@ final class StrategicBattleViewModel: ObservableObject {
 
       } catch {
         #if DEBUG
-        print("[Battle] settleHourWithCloud error:", error)
+        AppLog.battle.info("[Battle] settleHourWithCloud error: \(error.localizedDescription, privacy: .public)")
         #endif
         // ⑥ Store the SNAPSHOT allocations for this bucket (not current pendingKE).
         //    Clear pendingKE so the next hour starts fresh; the snapshot is safely queued.
@@ -631,7 +630,7 @@ final class StrategicBattleViewModel: ObservableObject {
     let bucketStart = currentBucket()
     if bucketStart > lastBucketStart {
       #if DEBUG
-      print("[Battle] bucket boundary crossed. last=\(lastBucketStart) new=\(bucketStart)")
+      AppLog.battle.info("[Battle] bucket boundary crossed. last=\(self.lastBucketStart) new=\(bucketStart)")
       #endif
       lastBucketStart = bucketStart
       settleHour()

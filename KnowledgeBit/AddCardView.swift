@@ -2,6 +2,7 @@
 import SwiftUI
 import SwiftData
 import WidgetKit
+import os
 
 struct AddCardView: View {
   @Environment(\.modelContext) private var modelContext
@@ -129,7 +130,7 @@ struct AddCardView: View {
               dismiss()
             } catch {
               saveErrorMessage = "儲存失敗，請稍後再試。"
-              print("❌ Failed to save card: \(error.localizedDescription)")
+              AppLog.card.info("❌ Failed to save card: \(error.localizedDescription)")
             }
           }
           .disabled(sanitizedCardTitle(title).isEmpty)
@@ -156,7 +157,7 @@ struct AddCardView: View {
     isAIGenerating = true
     defer { isAIGenerating = false }
 
-    print("[AddCardView] AI generate: isLoggedIn=\(authService.isLoggedIn)")
+    AppLog.card.info("[AddCardView] AI generate: isLoggedIn=\(authService.isLoggedIn)")
 
     // 先決定目標單字集，才能取得「已存在的單字」供 API 與本機去重
     let targetSet: WordSet
@@ -212,7 +213,7 @@ struct AddCardView: View {
 
       let skippedCount = items.count - toInsert.count
       if skippedCount > 0 {
-        print("[AddCardView] AI 產生：新增 \(toInsert.count) 張，略過 \(skippedCount) 張重複單字")
+        AppLog.card.info("[AddCardView] AI 產生：新增 \(toInsert.count) 張，略過 \(skippedCount) 張重複單字")
       }
 
       try modelContext.save()

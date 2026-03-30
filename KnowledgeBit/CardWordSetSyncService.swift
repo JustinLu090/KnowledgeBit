@@ -4,6 +4,7 @@
 import Foundation
 import Supabase
 import SwiftData
+import os
 
 final class CardWordSetSyncService {
   private let client: SupabaseClient
@@ -60,7 +61,7 @@ final class CardWordSetSyncService {
         .upsert(payload, onConflict: "id")
         .execute()
     } catch {
-      print("⚠️ [Sync] word_sets upsert 失敗: \(error.localizedDescription)")
+      AppLog.sync.info("⚠️ [Sync] word_sets upsert 失敗: \(error.localizedDescription)")
     }
   }
 
@@ -68,7 +69,7 @@ final class CardWordSetSyncService {
     do {
       try await deleteWordSetOrThrow(id: id)
     } catch {
-      print("❌ [Sync] deleteWordSet 失敗: \(error.localizedDescription)")
+      AppLog.sync.info("❌ [Sync] deleteWordSet 失敗: \(error.localizedDescription)")
     }
   }
 
@@ -139,7 +140,7 @@ final class CardWordSetSyncService {
         .upsert(payload, onConflict: "id")
         .execute()
     } catch {
-      print("⚠️ [Sync] cards upsert 失敗: \(error.localizedDescription)")
+      AppLog.sync.info("⚠️ [Sync] cards upsert 失敗: \(error.localizedDescription)")
     }
   }
 
@@ -151,7 +152,7 @@ final class CardWordSetSyncService {
         .eq("user_id", value: currentUserId)
         .execute()
     } catch {
-      print("⚠️ [Sync] cards delete 失敗: \(error.localizedDescription)")
+      AppLog.sync.info("⚠️ [Sync] cards delete 失敗: \(error.localizedDescription)")
     }
   }
 
@@ -164,7 +165,7 @@ final class CardWordSetSyncService {
         .eq("user_id", value: currentUserId)
         .execute()
     } catch {
-      print("⚠️ [Sync] cards delete by word_set_id 失敗: \(error.localizedDescription)")
+      AppLog.sync.info("⚠️ [Sync] cards delete by word_set_id 失敗: \(error.localizedDescription)")
     }
   }
 
@@ -207,11 +208,11 @@ final class CardWordSetSyncService {
         do {
           try modelContext.save()
         } catch {
-          print("❌ [Sync] pullCardsForWordSet save 失敗: \(error.localizedDescription)")
+          AppLog.sync.info("❌ [Sync] pullCardsForWordSet save 失敗: \(error.localizedDescription)")
         }
       }
     } catch {
-      print("⚠️ [Sync] pullCardsForWordSet 失敗: \(error.localizedDescription)")
+      AppLog.sync.info("⚠️ [Sync] pullCardsForWordSet 失敗: \(error.localizedDescription)")
     }
   }
 
@@ -265,11 +266,11 @@ final class CardWordSetSyncService {
         do {
           try modelContext.save()
         } catch {
-          print("❌ [Sync] pullVisibleWordSetsAndMergeToLocal save 失敗: \(error.localizedDescription)")
+          AppLog.sync.info("❌ [Sync] pullVisibleWordSetsAndMergeToLocal save 失敗: \(error.localizedDescription)")
         }
       }
     } catch {
-      print("⚠️ [Sync] pullVisibleWordSetsAndMergeToLocal 失敗: \(error.localizedDescription)")
+      AppLog.sync.info("⚠️ [Sync] pullVisibleWordSetsAndMergeToLocal 失敗: \(error.localizedDescription)")
     }
   }
 }

@@ -3,6 +3,7 @@
 
 import SwiftUI
 import SwiftData
+import os
 
 struct CommunityView: View {
   @EnvironmentObject var authService: AuthService
@@ -282,7 +283,7 @@ struct CommunityView: View {
     } catch let urlError as URLError where urlError.code == .cancelled {
       // 請求被取消（例如離開畫面），不記錄
     } catch {
-      print("⚠️ [Community] loadWordSetInvitations 失敗: \(error)")
+      AppLog.community.info("⚠️ [Community] loadWordSetInvitations 失敗: \(error)")
     }
   }
 
@@ -298,7 +299,7 @@ struct CommunityView: View {
         await sync.pullVisibleWordSetsAndMergeToLocal(modelContext: modelContext)
       }
     } catch {
-      print("⚠️ [Community] acceptWordSetInvitation 失敗: \(error)")
+      AppLog.community.info("⚠️ [Community] acceptWordSetInvitation 失敗: \(error)")
     }
     respondingInvitationId = nil
   }
@@ -311,7 +312,7 @@ struct CommunityView: View {
       try await service.declineInvitation(id: id)
       await loadWordSetInvitations()
     } catch {
-      print("⚠️ [Community] declineWordSetInvitation 失敗: \(error)")
+      AppLog.community.info("⚠️ [Community] declineWordSetInvitation 失敗: \(error)")
     }
     respondingInvitationId = nil
   }
@@ -392,7 +393,7 @@ struct CommunityView: View {
     } catch is CancellationError {
     } catch let urlError as URLError where urlError.code == .cancelled {
     } catch {
-      print("⚠️ [Community] loadRecentChallenges 失敗: \(error)")
+      AppLog.community.info("⚠️ [Community] loadRecentChallenges 失敗: \(error)")
     }
   }
 

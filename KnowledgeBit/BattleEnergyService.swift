@@ -3,6 +3,7 @@
 
 import Foundation
 import Supabase
+import os
 
 @MainActor
 final class BattleEnergyService {
@@ -41,7 +42,7 @@ final class BattleEnergyService {
         ])
         .execute()
     } catch {
-      print("⚠️ [KE] increment RPC 失敗: \(error)")
+      AppLog.battle.info("⚠️ [KE] increment RPC 失敗: \(error)")
     }
   }
 
@@ -57,7 +58,7 @@ final class BattleEnergyService {
         ])
         .execute()
     } catch {
-      print("⚠️ [KE] spend RPC 失敗: \(error)")
+      AppLog.battle.info("⚠️ [KE] spend RPC 失敗: \(error)")
     }
   }
 
@@ -74,7 +75,7 @@ final class BattleEnergyService {
         .upsert(payload, onConflict: "user_id,namespace")
         .execute()
     } catch {
-      print("⚠️ [KE] set upsert 失敗: \(error)")
+      AppLog.battle.info("⚠️ [KE] set upsert 失敗: \(error)")
     }
   }
 }

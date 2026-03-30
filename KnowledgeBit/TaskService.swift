@@ -3,6 +3,7 @@
 
 import Foundation
 import Combine
+import os
 
 class TaskService: ObservableObject {
   private let userDefaults: UserDefaults
@@ -16,7 +17,7 @@ class TaskService: ObservableObject {
     if let sharedDefaults = UserDefaults(suiteName: AppGroup.identifier) {
       self.userDefaults = sharedDefaults
     } else {
-      print("⚠️ [Task] 無法取得 App Group UserDefaults，回退到標準 UserDefaults")
+      AppLog.task.info("⚠️ [Task] 無法取得 App Group UserDefaults，回退到標準 UserDefaults")
       self.userDefaults = .standard
     }
     
@@ -43,14 +44,14 @@ class TaskService: ObservableObject {
         userDefaults.removeObject(forKey: "task_review_done_date")
         userDefaults.removeObject(forKey: "today_review_count")
         #if DEBUG
-        print("🔄 [Task] 重置複習任務")
+        AppLog.task.info("🔄 [Task] 重置複習任務")
         #endif
       }
 
       if !calendar.isDate(lastQuizDay, inSameDayAs: today) {
         userDefaults.removeObject(forKey: "task_quiz_done_date")
         #if DEBUG
-        print("🔄 [Task] 重置測驗任務")
+        AppLog.task.info("🔄 [Task] 重置測驗任務")
         #endif
       }
     }
@@ -83,13 +84,13 @@ class TaskService: ObservableObject {
   // 僅標記完成，不再給予 EXP（經驗值只來自：今日任務・測驗 20、完成三張卡片 10、精準打擊 20）
   func completeReviewTask(reviewCount: Int, experienceStore: ExperienceStore) -> Bool {
     guard reviewCount >= 10 else {
-      print("⚠️ [Task] 複習任務未完成：需要至少 10 張，目前 \(reviewCount) 張")
+      AppLog.task.info("⚠️ [Task] 複習任務未完成：需要至少 10 張，目前 \(reviewCount) 張")
       return false
     }
     
     // 檢查今天是否已完成
     if reviewTaskDone {
-      print("ℹ️ [Task] 複習任務今天已完成")
+      AppLog.task.info("ℹ️ [Task] 複習任務今天已完成")
       return false
     }
     
@@ -99,7 +100,7 @@ class TaskService: ObservableObject {
     reviewTaskDone = true
     
     #if DEBUG
-    print("✅ [Task] 完成複習任務（無 EXP）")
+    AppLog.task.info("✅ [Task] 完成複習任務（無 EXP）")
     #endif
     return true
   }
@@ -109,7 +110,7 @@ class TaskService: ObservableObject {
   func completeQuizTask(experienceStore: ExperienceStore) -> Bool {
     // 檢查今天是否已完成
     if quizTaskDone {
-      print("ℹ️ [Task] 測驗任務今天已完成")
+      AppLog.task.info("ℹ️ [Task] 測驗任務今天已完成")
       return false
     }
     
@@ -125,7 +126,7 @@ class TaskService: ObservableObject {
     AchievementService.shared.recordQuizCompleted()
 
     #if DEBUG
-    print("✅ [Task] 完成測驗任務！獲得 20 EXP")
+    AppLog.task.info("✅ [Task] 完成測驗任務！獲得 20 EXP")
     #endif
     return true
   }
@@ -136,7 +137,7 @@ class TaskService: ObservableObject {
     userDefaults.set(todayReviewCount, forKey: "today_review_count")
     AchievementService.shared.recordReviewCompleted()
     #if DEBUG
-    print("📊 [Task] 今日複習數量: \(todayReviewCount)")
+    AppLog.task.info("📊 [Task] 今日複習數量: \(self.todayReviewCount)")
     #endif
   }
 }

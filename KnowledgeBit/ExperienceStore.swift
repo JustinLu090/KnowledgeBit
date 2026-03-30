@@ -12,6 +12,7 @@ import SwiftUI
 import Combine
 import Supabase
 import WidgetKit
+import os
 
 /// 升級所需 EXP 曲線（與 `ExperienceStore` 共用，便於單元測試）
 enum ExperienceProgression {
@@ -42,7 +43,7 @@ class ExperienceStore: ObservableObject {
         userDefaults.set(level, forKey: AppGroup.Keys.level)
         userDefaults.synchronize()
         #if DEBUG
-        print("📊 [EXP] Level 更新: \(level)")
+        AppLog.exp.info("📊 [EXP] Level 更新: \(self.level)")
         #endif
       } else {
         DispatchQueue.main.async { [weak self] in
@@ -50,7 +51,7 @@ class ExperienceStore: ObservableObject {
           self.userDefaults.set(self.level, forKey: AppGroup.Keys.level)
           self.userDefaults.synchronize()
           #if DEBUG
-          print("📊 [EXP] Level 更新: \(self.level)")
+          AppLog.exp.info("📊 [EXP] Level 更新: \(self.level)")
           #endif
         }
       }
@@ -63,7 +64,7 @@ class ExperienceStore: ObservableObject {
         userDefaults.set(exp, forKey: AppGroup.Keys.exp)
         userDefaults.synchronize()
         #if DEBUG
-        print("📊 [EXP] EXP 更新: \(exp)")
+        AppLog.exp.info("📊 [EXP] EXP 更新: \(self.exp)")
         #endif
       } else {
         DispatchQueue.main.async { [weak self] in
@@ -71,7 +72,7 @@ class ExperienceStore: ObservableObject {
           self.userDefaults.set(self.exp, forKey: AppGroup.Keys.exp)
           self.userDefaults.synchronize()
           #if DEBUG
-          print("📊 [EXP] EXP 更新: \(self.exp)")
+          AppLog.exp.info("📊 [EXP] EXP 更新: \(self.exp)")
           #endif
         }
       }
@@ -84,7 +85,7 @@ class ExperienceStore: ObservableObject {
         userDefaults.set(expToNext, forKey: AppGroup.Keys.expToNext)
         userDefaults.synchronize()
         #if DEBUG
-        print("📊 [EXP] expToNext 更新: \(expToNext)")
+        AppLog.exp.info("📊 [EXP] expToNext 更新: \(self.expToNext)")
         #endif
       } else {
         DispatchQueue.main.async { [weak self] in
@@ -92,7 +93,7 @@ class ExperienceStore: ObservableObject {
           self.userDefaults.set(self.expToNext, forKey: AppGroup.Keys.expToNext)
           self.userDefaults.synchronize()
           #if DEBUG
-          print("📊 [EXP] expToNext 更新: \(self.expToNext)")
+          AppLog.exp.info("📊 [EXP] expToNext 更新: \(self.expToNext)")
           #endif
         }
       }
@@ -107,7 +108,7 @@ class ExperienceStore: ObservableObject {
     if let sharedDefaults = UserDefaults(suiteName: AppGroup.identifier) {
       self.userDefaults = sharedDefaults
     } else {
-      print("⚠️ [EXP] 無法取得 App Group UserDefaults，回退到標準 UserDefaults")
+      AppLog.exp.info("⚠️ [EXP] 無法取得 App Group UserDefaults，回退到標準 UserDefaults")
       self.userDefaults = .standard
     }
     
@@ -143,7 +144,7 @@ class ExperienceStore: ObservableObject {
     }
     
     #if DEBUG
-    print("📊 [EXP] 初始化完成 - Level: \(level), EXP: \(exp)/\(expToNext)")
+    AppLog.exp.info("📊 [EXP] 初始化完成 - Level: \(self.level), EXP: \(self.exp)/\(self.expToNext)")
     #endif
   }
   
@@ -151,7 +152,7 @@ class ExperienceStore: ObservableObject {
   // - delta: 要增加的 EXP 數量
   func addExp(delta: Int) {
     guard delta > 0 else {
-      print("⚠️ [EXP] addExp 收到無效的 delta: \(delta)")
+      AppLog.exp.info("⚠️ [EXP] addExp 收到無效的 delta: \(delta)")
       return
     }
     
@@ -173,15 +174,15 @@ class ExperienceStore: ObservableObject {
       expToNext = ExperienceProgression.expRequiredToAdvance(fromLevel: level)
       
       #if DEBUG
-      print("🎉 [EXP] 升級！新等級: \(level), 剩餘 EXP: \(exp), 下一級需要: \(expToNext)")
+      AppLog.exp.info("🎉 [EXP] 升級！新等級: \(self.level), 剩餘 EXP: \(self.exp), 下一級需要: \(self.expToNext)")
       #endif
     }
 
     #if DEBUG
     if oldLevel != level {
-      print("📈 [EXP] 升級！Level \(oldLevel) → \(level), EXP: \(oldExp) → \(exp)/\(expToNext)")
+      AppLog.exp.info("📈 [EXP] 升級！Level \(oldLevel) → \(self.level), EXP: \(oldExp) → \(self.exp)/\(self.expToNext)")
     } else {
-      print("📈 [EXP] 獲得 \(delta) EXP, 當前: \(exp)/\(expToNext) (Level \(level))")
+      AppLog.exp.info("📈 [EXP] 獲得 \(delta) EXP, 當前: \(self.exp)/\(self.expToNext) (Level \(self.level))")
     }
     #endif
     
@@ -217,7 +218,7 @@ class ExperienceStore: ObservableObject {
     guard let authService = authService,
           authService.isLoggedIn,
           let userId = authService.currentUserId else {
-      print("⚠️ [Cloud Load] 未登入或無法取得 user.id，跳過雲端載入")
+      AppLog.exp.info("⚠️ [Cloud Load] 未登入或無法取得 user.id，跳過雲端載入")
       return
     }
     
@@ -264,9 +265,9 @@ class ExperienceStore: ObservableObject {
         
         #if DEBUG
         if oldLevel != level || oldExp != exp {
-          print("✅ [Cloud Load] 已從雲端載入並更新 - Level: \(oldLevel) → \(level), EXP: \(oldExp) → \(exp)")
+          AppLog.exp.info("✅ [Cloud Load] 已從雲端載入並更新 - Level: \(oldLevel) → \(self.level), EXP: \(oldExp) → \(self.exp)")
         } else {
-          print("✅ [Cloud Load] 雲端資料與本地一致 - Level: \(level), EXP: \(exp)")
+          AppLog.exp.info("✅ [Cloud Load] 雲端資料與本地一致 - Level: \(self.level), EXP: \(self.exp)")
         }
         #endif
         
@@ -275,10 +276,10 @@ class ExperienceStore: ObservableObject {
           WidgetReloader.reloadAll()
         }
       } else {
-        print("⚠️ [Cloud Load] 雲端無用戶資料，使用本地資料")
+        AppLog.exp.info("⚠️ [Cloud Load] 雲端無用戶資料，使用本地資料")
       }
     } catch {
-      print("❌ [Cloud Load] 載入失敗: \(error.localizedDescription)")
+      AppLog.exp.info("❌ [Cloud Load] 載入失敗: \(error.localizedDescription)")
     }
   }
   
@@ -290,7 +291,7 @@ class ExperienceStore: ObservableObject {
     guard let authService = authService,
           authService.isLoggedIn,
           let userId = authService.currentUserId else {
-      print("⚠️ [Cloud Sync] 未登入或無法取得 user.id，跳過雲端同步")
+      AppLog.exp.info("⚠️ [Cloud Sync] 未登入或無法取得 user.id，跳過雲端同步")
       return
     }
     
@@ -346,7 +347,7 @@ class ExperienceStore: ObservableObject {
           .execute()
       }
       #if DEBUG
-      print("✅ [Cloud Sync] 成功同步等級與經驗值到雲端 - Level: \(level), EXP: \(exp)")
+      AppLog.exp.info("✅ [Cloud Sync] 成功同步等級與經驗值到雲端 - Level: \(self.level), EXP: \(self.exp)")
       #endif
       
       // 同步成功後，將資料寫入 App Group（供 Widget 讀取）
@@ -355,7 +356,7 @@ class ExperienceStore: ObservableObject {
         authService.saveExpToAppGroup(level: level, exp: exp, expToNext: expToNext, shouldReloadWidget: false)
       }
     } catch {
-      print("❌ [Cloud Sync] 同步失敗: \(error.localizedDescription)")
+      AppLog.exp.info("❌ [Cloud Sync] 同步失敗: \(error.localizedDescription)")
     }
   }
 }

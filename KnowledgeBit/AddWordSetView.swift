@@ -4,6 +4,7 @@
 import SwiftUI
 import SwiftData
 import WidgetKit
+import os
 
 struct AddWordSetView: View {
   @Environment(\.modelContext) private var modelContext
@@ -71,7 +72,7 @@ struct AddWordSetView: View {
               }
               dismiss()
             } catch {
-              print("❌ Failed to save word set: \(error.localizedDescription)")
+              AppLog.wordset.info("❌ Failed to save word set: \(error.localizedDescription)")
             }
           }
           .disabled(title.isEmpty)

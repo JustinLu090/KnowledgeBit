@@ -4,6 +4,7 @@
 import SwiftUI
 import SwiftData
 import WidgetKit
+import os
 
 struct WordSetListView: View {
   @Query private var wordSets: [WordSet]
@@ -103,7 +104,7 @@ struct WordSetListView: View {
                 WidgetReloader.reloadAll()
               } catch {
                 deleteErrorMessage = "遠端已刪除，但本機更新失敗，請重新開啟 app 後確認。"
-                print("❌ Failed to save local word set deletion: \(error.localizedDescription)")
+                AppLog.wordset.info("❌ Failed to save local word set deletion: \(error.localizedDescription)")
               }
             }
           }
@@ -119,7 +120,7 @@ struct WordSetListView: View {
               WidgetReloader.reloadAll()
             } catch {
               deleteErrorMessage = "本機刪除失敗，請稍後再試。"
-              print("❌ Failed to delete local word set: \(error.localizedDescription)")
+              AppLog.wordset.info("❌ Failed to delete local word set: \(error.localizedDescription)")
             }
           }
         }

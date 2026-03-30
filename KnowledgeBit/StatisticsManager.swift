@@ -3,6 +3,7 @@
 
 import Foundation
 import SwiftData
+import os
 
 /// 本週第一天（週日為第一天），與 `StatisticsManager` 內部邏輯一致，供單元測試驗證
 enum StatisticsCalendarHelpers {
@@ -32,7 +33,7 @@ final class StatisticsManager {
     if let shared = UserDefaults(suiteName: AppGroup.identifier) {
       self.userDefaults = shared
     } else {
-      print("⚠️ [Statistics] App Group UserDefaults not available, falling back to standard")
+      AppLog.stats.info("⚠️ [Statistics] App Group UserDefaults not available, falling back to standard")
       self.userDefaults = .standard
     }
   }
@@ -66,7 +67,7 @@ final class StatisticsManager {
       do {
         existing = try modelContext.fetch(descriptor)
       } catch {
-        print("❌ [Statistics] flushToSwiftData fetch 失敗: \(error.localizedDescription)")
+        AppLog.stats.info("❌ [Statistics] flushToSwiftData fetch 失敗: \(error.localizedDescription)")
         existing = []
       }
       if existing.isEmpty {
@@ -74,7 +75,7 @@ final class StatisticsManager {
         do {
           try modelContext.save()
         } catch {
-          print("❌ [Statistics] flushToSwiftData save 失敗: \(error.localizedDescription)")
+          AppLog.stats.info("❌ [Statistics] flushToSwiftData save 失敗: \(error.localizedDescription)")
         }
       }
     }
@@ -98,7 +99,7 @@ final class StatisticsManager {
     do {
       weekStats = try modelContext.fetch(weekDescriptor)
     } catch {
-      print("❌ [Statistics] weeklyDailyExp fetch 失敗: \(error.localizedDescription)")
+      AppLog.stats.info("❌ [Statistics] weeklyDailyExp fetch 失敗: \(error.localizedDescription)")
       weekStats = []
     }
     let statsByDay = Dictionary(uniqueKeysWithValues: weekStats.map { (calendar.startOfDay(for: $0.date), $0) })
@@ -137,7 +138,7 @@ final class StatisticsManager {
     do {
       weekStats = try modelContext.fetch(weekDescriptor)
     } catch {
-      print("❌ [Statistics] weeklyTotalStudyMinutes fetch 失敗: \(error.localizedDescription)")
+      AppLog.stats.info("❌ [Statistics] weeklyTotalStudyMinutes fetch 失敗: \(error.localizedDescription)")
       weekStats = []
     }
     let minutesByDay = Dictionary(uniqueKeysWithValues: weekStats.map { (calendar.startOfDay(for: $0.date), $0.studyMinutes) })
@@ -173,7 +174,7 @@ final class StatisticsManager {
     do {
       logs = try modelContext.fetch(descriptor)
     } catch {
-      print("❌ [Statistics] weeklyAverageAccuracy fetch 失敗: \(error.localizedDescription)")
+      AppLog.stats.info("❌ [Statistics] weeklyAverageAccuracy fetch 失敗: \(error.localizedDescription)")
       logs = []
     }
     let totalCorrect = logs.reduce(0) { $0 + $1.cardsReviewed }

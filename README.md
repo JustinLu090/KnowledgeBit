@@ -211,8 +211,9 @@ KnowledgeBit/
 ## 安全與敏感設定
 
 - **Supabase**  
-  請將 `SupabaseConfig.example.txt` 複製為 `SupabaseConfig.swift`，並在 [Supabase Dashboard](https://supabase.com/dashboard) → Project Settings → API 填入 **Project URL** 與 **anon public key**。`SupabaseConfig.swift` 已列入 `.gitignore`，請勿提交。  
-  若曾誤將 `SupabaseConfig.swift` 提交，請在 Dashboard 的 API 設定中**重新產生 anon key**，並更新本機設定，以降低外洩風險。
+  在 [Supabase Dashboard](https://supabase.com/dashboard) → **Project Settings → API** 取得 **Project URL** 與 **anon public** key，填入 `KnowledgeBit/SupabaseSecrets.swift` 中的 `YOUR_PROJECT_REF` 與 `YOUR_ANON_KEY`（勿使用 `service_role` key）。  
+  `SupabaseConfig.swift` 僅轉接 `SupabaseSecrets`；若你**不**希望憑證出現在版控，可將 `SupabaseSecrets.swift` 改為本機專用並在 `.gitignore` 中取消註解對應列，團隊以私下管道傳遞設定。  
+  **若 anon key 曾出現在公開版控或外洩**，請在 Dashboard 的 API 設定中**輪替（rotate）anon key**，並更新所有開發者本機設定。
 
 - **Edge Functions（Gemini）**  
   AI 產生單字卡與選擇題所使用的 API Key，請僅在 Supabase 的 Edge Function **Secrets** 中設定 `GEMINI_API_KEY`，勿寫入程式碼。設定方式請參考專案內 AI 相關說明文件（若有 `AI_SETUP.md` 則以該檔為準）。

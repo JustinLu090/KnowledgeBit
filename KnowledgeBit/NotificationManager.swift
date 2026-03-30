@@ -3,6 +3,7 @@
 
 import Foundation
 import UserNotifications
+import os
 
 final class NotificationManager {
   static let shared = NotificationManager()
@@ -21,7 +22,7 @@ final class NotificationManager {
   func requestPermission(completion: ((Bool) -> Void)? = nil) {
     UNUserNotificationCenter.current()
       .requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
-        if let error { print("⚠️ [Notification] 權限錯誤: \(error.localizedDescription)") }
+        if let error { AppLog.notif.info("⚠️ [Notification] 權限錯誤: \(error.localizedDescription)") }
         completion?(granted)
       }
   }
@@ -55,7 +56,7 @@ final class NotificationManager {
     let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
     let request = UNNotificationRequest(identifier: ID.dailyStudy, content: content, trigger: trigger)
     UNUserNotificationCenter.current().add(request) { error in
-      if let error { print("⚠️ [Notification] 排程每日提醒失敗: \(error)") }
+      if let error { AppLog.notif.info("⚠️ [Notification] 排程每日提醒失敗: \(error)") }
     }
   }
 
@@ -90,7 +91,7 @@ final class NotificationManager {
     )
     let request = UNNotificationRequest(identifier: ID.streakRisk, content: content, trigger: trigger)
     UNUserNotificationCenter.current().add(request) { error in
-      if let error { print("⚠️ [Notification] 排程連勝提醒失敗: \(error)") }
+      if let error { AppLog.notif.info("⚠️ [Notification] 排程連勝提醒失敗: \(error)") }
     }
   }
 
@@ -99,7 +100,7 @@ final class NotificationManager {
   /// 更新 App badge 為到期卡片數
   func updateBadge(dueCount: Int) {
     UNUserNotificationCenter.current().setBadgeCount(dueCount > 0 ? 1 : 0) { error in
-      if let error { print("⚠️ [Notification] badge 更新失敗: \(error)") }
+      if let error { AppLog.notif.info("⚠️ [Notification] badge 更新失敗: \(error)") }
     }
   }
 

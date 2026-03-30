@@ -6,6 +6,7 @@
 import AVFoundation
 import Combine
 import Speech
+import os
 
 class SpeechService: NSObject, ObservableObject {
 
@@ -58,7 +59,7 @@ class SpeechService: NSObject, ObservableObject {
 
   func speak(_ text: String, language: String?) {
     let localeId = SpeechService.bcp47(for: language)
-    print("🔊 speak: \"\(text)\" locale=\(localeId)")
+    AppLog.speech.info("🔊 speak: \"\(text)\" locale=\(localeId)")
 
     // ① 強制停止 STT，確保 audioEngine.stop() + removeTap 已執行、session 已 deactivate
     stopListening()
@@ -74,7 +75,7 @@ class SpeechService: NSObject, ObservableObject {
       // notifyOthersOnDeactivation 確保其他 audio clients 知道 session 狀態
       try session.setActive(true, options: .notifyOthersOnDeactivation)
     } catch {
-      print("🔊 AVAudioSession setup failed: \(error.localizedDescription)")
+      AppLog.speech.info("🔊 AVAudioSession setup failed: \(error.localizedDescription)")
     }
 
     let utterance = AVSpeechUtterance(string: text)
@@ -83,14 +84,14 @@ class SpeechService: NSObject, ObservableObject {
     synthesizer.stopSpeaking(at: .immediate)
     synthesizer.speak(utterance)
 
-    print("🔊 Voice used=\(utterance.voice?.language ?? "none")")
+    AppLog.speech.info("🔊 Voice used=\(utterance.voice?.language ?? "none")")
   }
 
   /// 翻面時依序朗讀：正面 → 停頓 0.5 秒 → 背面
   /// 利用 AVSpeechSynthesizer 的 utterance 排隊機制，不需要 DispatchQueue.asyncAfter。
   func speakCard(front: String, back: String, language: String?) {
     let localeId = SpeechService.bcp47(for: language)
-    print("🔊 speakCard front=\"\(front)\" back=\"\(back)\" locale=\(localeId)")
+    AppLog.speech.info("🔊 speakCard front=\"\(front)\" back=\"\(back)\" locale=\(localeId)")
 
     // ① 強制停止 STT：確保 audioEngine.stop() + inputNode.removeTap 已執行，
     //    並同步呼叫 setActive(false)，讓後續 TTS 可乾淨地接管 session。
@@ -108,7 +109,7 @@ class SpeechService: NSObject, ObservableObject {
       )
       try session.setActive(true, options: .notifyOthersOnDeactivation)
     } catch {
-      print("🔊 AVAudioSession setup failed: \(error.localizedDescription)")
+      AppLog.speech.info("🔊 AVAudioSession setup failed: \(error.localizedDescription)")
     }
 
     synthesizer.stopSpeaking(at: .immediate)

@@ -238,7 +238,7 @@ struct ChoiceQuizView: View {
 
   private func questionCard(_ q: ChoiceQuestion) -> some View {
     VStack(alignment: .leading, spacing: 16) {
-      Text("填空題")
+      Text("選擇題")
         .font(.system(size: 13, weight: .bold))
         .foregroundStyle(.blue)
         .padding(.horizontal, 10)

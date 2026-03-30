@@ -5,6 +5,7 @@ import SwiftUI
 import UIKit
 import SwiftData
 import PhotosUI
+import os
 
 struct EditProfileView: View {
   @Environment(\.dismiss) var dismiss
@@ -84,7 +85,7 @@ struct EditProfileView: View {
       do {
         avatarURLToSync = try await authService.uploadAvatar(userId: userId, imageData: avatarData)
       } catch {
-        print("⚠️ [EditProfile] 頭貼上傳失敗: \(error)，僅同步名稱。請確認已建立 avatars bucket。")
+        AppLog.auth.info("⚠️ [EditProfile] 頭貼上傳失敗: \(error)，僅同步名稱。請確認已建立 avatars bucket。")
       }
     }
 

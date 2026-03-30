@@ -47,8 +47,8 @@ Secrets.xcconfig
 distribution_certificates/
 development_certificates/
 
-# 真實 Supabase 設定（請將 SupabaseConfig.swift 填入本地 key，勿提交；本檔案僅為範本）
-KnowledgeBit/SupabaseConfig.swift
+# 若選擇不把 Supabase 憑證放進版控，可改為只提交範本並忽略本機檔（見 README「安全與敏感設定」）
+# KnowledgeBit/SupabaseSecrets.swift
 
 # Xcode 用戶專屬（已含 xcuserdata/，補充分項）
 *.xcuserstate

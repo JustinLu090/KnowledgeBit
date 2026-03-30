@@ -4,6 +4,7 @@
 import Foundation
 import Supabase
 import SwiftData
+import os
 
 /// 單張 AI 產生的單字卡（與 Edge Function 回傳的陣列元素對應）
 struct GeneratedCardItem: Decodable {
@@ -186,16 +187,16 @@ final class AIService {
           return false
         }()
         if isRetryableNetworkError, attempt < maxAttempts {
-          print("[AIService] generateCards 網路錯誤，\(attempt)/\(maxAttempts) 秒後重試: \(error.localizedDescription)")
+          AppLog.ai.info("[AIService] generateCards 網路錯誤，\(attempt)/\(maxAttempts) 秒後重試: \(error.localizedDescription)")
           try? await Task.sleep(nanoseconds: retryDelay)
           continue
         }
-        print("[AIService] generateCards failed: \(error)")
+        AppLog.ai.info("[AIService] generateCards failed: \(error)")
         if let ns = error as NSError? {
-          print("[AIService] NSError domain=\(ns.domain), code=\(ns.code), userInfo=\(ns.userInfo)")
+          AppLog.ai.info("[AIService] NSError domain=\(ns.domain), code=\(ns.code), userInfo=\(ns.userInfo)")
         }
         if let body = Self.extractResponseBody(from: error) {
-          print("[AIService] Response body: \(body)")
+          AppLog.ai.info("[AIService] Response body: \(body)")
         }
         if let urlError = error as? URLError {
           throw AIServiceError.network(urlError)
@@ -236,8 +237,8 @@ final class AIService {
       let response: GenerateQuizResponse = try await client.functions.invoke("generate-quiz", options: options)
       return response.questions
     } catch {
-      print("[AIService] generateQuizQuestions failed: \(error)")
-      if let body = Self.extractResponseBody(from: error) { print("[AIService] Response body: \(body)") }
+      AppLog.ai.info("[AIService] generateQuizQuestions failed: \(error)")
+      if let body = Self.extractResponseBody(from: error) { AppLog.ai.info("[AIService] Response body: \(body)") }
       if let urlError = error as? URLError { throw AIServiceError.network(urlError) }
       throw AIServiceError.invokeFailed(error)
     }
@@ -320,8 +321,8 @@ final class AIService {
     do {
       return try await invokeLectureMaterials(body: body, fallbackOptions: options)
     } catch {
-      print("[AIService] generateLectureMaterials failed: \(error)")
-      if let body = Self.extractResponseBody(from: error) { print("[AIService] Response body: \(body)") }
+      AppLog.ai.info("[AIService] generateLectureMaterials failed: \(error)")
+      if let body = Self.extractResponseBody(from: error) { AppLog.ai.info("[AIService] Response body: \(body)") }
       if let urlError = error as? URLError { throw AIServiceError.network(urlError) }
       throw AIServiceError.invokeFailed(error)
     }
@@ -367,7 +368,7 @@ final class AIService {
     do {
       return try await invokeLectureMaterialsViaHTTP(body: body)
     } catch {
-      print("[AIService] HTTP path failed, fallback to SDK invoke: \(error.localizedDescription)")
+      AppLog.ai.info("[AIService] HTTP path failed, fallback to SDK invoke: \(error.localizedDescription)")
       return try await client.functions.invoke("generate-from-lecture", options: fallbackOptions)
     }
   }
@@ -404,7 +405,7 @@ final class AIService {
 
         let bodyText = String(data: data, encoding: .utf8) ?? "(empty body)"
         if http.statusCode == 401, attempt == 1 {
-          print("[AIService] HTTP 401 invalid JWT, refreshing session and retrying once.")
+          AppLog.ai.info("[AIService] HTTP 401 invalid JWT, refreshing session and retrying once.")
           _ = try await client.auth.refreshSession()
           continue
         }

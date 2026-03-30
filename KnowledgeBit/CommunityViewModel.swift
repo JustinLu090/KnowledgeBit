@@ -4,6 +4,7 @@
 import Foundation
 import SwiftUI
 import Combine
+import os
 
 @MainActor
 final class CommunityViewModel: ObservableObject {
@@ -56,7 +57,7 @@ final class CommunityViewModel: ObservableObject {
     } catch {
       if Self.isCancelledError(error) { return }
       errorMessage = "無法載入好友列表"
-      print("⚠️ [Community] fetchFriends 失敗: \(error)")
+      AppLog.community.info("⚠️ [Community] fetchFriends 失敗: \(error)")
     }
   }
 
@@ -73,7 +74,7 @@ final class CommunityViewModel: ObservableObject {
     } catch {
       if Self.isCancelledError(error) { return }
       errorMessage = "無法載入好友請求"
-      print("⚠️ [Community] fetchPendingRequests 失敗: \(error)")
+      AppLog.community.info("⚠️ [Community] fetchPendingRequests 失敗: \(error)")
     }
   }
 
@@ -105,7 +106,7 @@ final class CommunityViewModel: ObservableObject {
       AchievementService.shared.recordFriendCount(friends.count)
     } catch {
       if Self.isCancelledError(error) { return }
-      print("⚠️ [Community] loadLeaderboard 失敗: \(error)")
+      AppLog.community.info("⚠️ [Community] loadLeaderboard 失敗: \(error)")
     }
   }
 
@@ -126,7 +127,7 @@ final class CommunityViewModel: ObservableObject {
       if Self.isCancelledError(error) { return }
       myInviteCode = nil
       inviteQRImage = nil
-      print("⚠️ [Community] fetchMyInviteCode 失敗: \(error)")
+      AppLog.community.info("⚠️ [Community] fetchMyInviteCode 失敗: \(error)")
     }
   }
 
@@ -150,7 +151,7 @@ final class CommunityViewModel: ObservableObject {
       await loadPendingRequests(authService: authService)
     } catch {
       errorMessage = "發送失敗，請稍後再試"
-      print("⚠️ [Community] sendFriendRequestByInviteCode 失敗: \(error)")
+      AppLog.community.info("⚠️ [Community] sendFriendRequestByInviteCode 失敗: \(error)")
     }
   }
 
@@ -167,7 +168,7 @@ final class CommunityViewModel: ObservableObject {
       await loadFriends(authService: authService)
     } catch {
       errorMessage = "接受失敗，請稍後再試"
-      print("⚠️ [Community] acceptFriendRequest 失敗: \(error)")
+      AppLog.community.info("⚠️ [Community] acceptFriendRequest 失敗: \(error)")
     }
   }
 
@@ -181,7 +182,7 @@ final class CommunityViewModel: ObservableObject {
       pendingRequests = pendingRequests.filter { $0.id != id }
     } catch {
       errorMessage = "拒絕失敗，請稍後再試"
-      print("⚠️ [Community] declineFriendRequest 失敗: \(error)")
+      AppLog.community.info("⚠️ [Community] declineFriendRequest 失敗: \(error)")
     }
   }
 
@@ -198,7 +199,7 @@ final class CommunityViewModel: ObservableObject {
       friends = friends.filter { $0.userId != friendUserId }
     } catch {
       errorMessage = "刪除失敗，請稍後再試"
-      print("⚠️ [Community] deleteFriend 失敗: \(error)")
+      AppLog.community.info("⚠️ [Community] deleteFriend 失敗: \(error)")
     }
   }
 
@@ -216,7 +217,7 @@ final class CommunityViewModel: ObservableObject {
       sentRequestReceiverIds.insert(userId)
     } catch {
       errorMessage = "發送失敗，請稍後再試"
-      print("⚠️ [Community] sendFriendRequest 失敗: \(error)")
+      AppLog.community.info("⚠️ [Community] sendFriendRequest 失敗: \(error)")
     }
   }
 
@@ -244,7 +245,7 @@ final class CommunityViewModel: ObservableObject {
     } catch {
       searchResults = []
       errorMessage = "搜尋失敗"
-      print("⚠️ [Community] searchUsers 失敗: \(error)")
+      AppLog.community.info("⚠️ [Community] searchUsers 失敗: \(error)")
     }
   }
 }

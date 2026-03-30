@@ -87,12 +87,15 @@ struct ReviewSessionView: View {
 
         VStack(spacing: 20) {
           // 卡片正面（標題）
-          VStack(spacing: 16) {
+          GeometryReader { geo in
             Text(card.title)
-              .font(.system(size: 32, weight: .bold))
+              .font(.system(size: FlashcardTextSizing.fontSize(for: card.title, base: 30), weight: .bold))
               .foregroundStyle(.primary)
               .multilineTextAlignment(.center)
-              .padding()
+              .minimumScaleFactor(0.32)
+              .lineLimit(nil)
+              .frame(width: max(0, geo.size.width - 24), height: geo.size.height, alignment: .center)
+              .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
           }
           .frame(maxWidth: .infinity)
           .frame(height: 300)
@@ -108,15 +111,18 @@ struct ReviewSessionView: View {
 
           // 卡片背面（內容）- 只有翻面後才顯示
           if isFlipped {
-            VStack(spacing: 16) {
+            GeometryReader { geo in
               Text(card.content)
-                .font(.body)
+                .font(.system(size: FlashcardTextSizing.fontSize(for: card.content, base: 17), weight: .regular))
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.leading)
-                .padding()
+                .minimumScaleFactor(0.35)
+                .lineLimit(nil)
+                .frame(width: max(0, geo.size.width - 24), height: geo.size.height, alignment: .topLeading)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 200)
+            .frame(height: 220)
             .background(Color(.tertiarySystemGroupedBackground))
             .cornerRadius(16)
             .padding(.horizontal)

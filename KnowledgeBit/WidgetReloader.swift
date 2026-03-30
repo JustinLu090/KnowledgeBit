@@ -3,6 +3,7 @@
 
 import WidgetKit
 import Foundation
+import os
 
 /// Helper struct to reload widget timelines when data changes in the main app
 struct WidgetReloader {
@@ -45,14 +46,14 @@ struct WidgetReloader {
         
         WidgetCenter.shared.reloadTimelines(ofKind: widgetKind)
         lastReloadTime = Date()
-        print("🔄 Widget timeline reloaded (debounced): \(widgetKind)")
+        AppLog.widget.info("🔄 Widget timeline reloaded (debounced): \(widgetKind)")
       }
     } else {
       // 立即執行刷新
       lastReloadTime = now
       Task { @MainActor in
         WidgetCenter.shared.reloadTimelines(ofKind: widgetKind)
-        print("🔄 Widget timeline reloaded: \(widgetKind)")
+        AppLog.widget.info("🔄 Widget timeline reloaded: \(widgetKind)")
       }
     }
   }
@@ -70,7 +71,7 @@ struct WidgetReloader {
     lastReloadTime = Date()
     Task { @MainActor in
       WidgetCenter.shared.reloadTimelines(ofKind: widgetKind)
-      print("🔄 Widget timeline reloaded (immediate): \(widgetKind)")
+      AppLog.widget.info("🔄 Widget timeline reloaded (immediate): \(widgetKind)")
     }
   }
 }

@@ -3,6 +3,7 @@
 
 import Foundation
 import Combine
+import os
 
 /// 測驗類型：用於區分一般單字測驗與選擇題測驗，以更新對應的每日任務
 enum QuizType {
@@ -137,7 +138,7 @@ class DailyQuestService: ObservableObject {
     if let shared = UserDefaults(suiteName: AppGroup.identifier) {
       self.userDefaults = shared
     } else {
-      print("⚠️ [DailyQuest] App Group UserDefaults not available, falling back to standard")
+      AppLog.quest.info("⚠️ [DailyQuest] App Group UserDefaults not available, falling back to standard")
       self.userDefaults = .standard
     }
     loadOrResetQuests()
@@ -282,7 +283,7 @@ class DailyQuestService: ObservableObject {
       if !wasCompleted && quests[index].isCompleted {
         experienceStore.addExp(delta: quests[index].rewardExp)
         onQuestFirstCompleted()
-        print("✅ [Quest] 獲得 30 經驗值 - 獲得 \(quests[index].rewardExp) EXP")
+        AppLog.quest.info("✅ [Quest] 獲得 30 經驗值 - 獲得 \(self.quests[index].rewardExp) EXP")
       }
     }
   }
@@ -303,7 +304,7 @@ class DailyQuestService: ObservableObject {
         experienceStore.addExp(delta: quests[index].rewardExp)
         recordExpGainedToday(quests[index].rewardExp, experienceStore: experienceStore)
         onQuestFirstCompleted()
-        print("✅ [Quest] 學習時長 5 分鐘 - 獲得 \(quests[index].rewardExp) EXP")
+        AppLog.quest.info("✅ [Quest] 學習時長 5 分鐘 - 獲得 \(self.quests[index].rewardExp) EXP")
       }
     }
   }
@@ -326,7 +327,7 @@ class DailyQuestService: ObservableObject {
         experienceStore.addExp(delta: quests[index].rewardExp)
         recordExpGainedToday(quests[index].rewardExp, experienceStore: experienceStore)
         onQuestFirstCompleted()
-        print("✅ [Quest] \(title) - 獲得 \(quests[index].rewardExp) EXP")
+        AppLog.quest.info("✅ [Quest] \(title) - 獲得 \(self.quests[index].rewardExp) EXP")
       }
     }
   }
@@ -347,7 +348,7 @@ class DailyQuestService: ObservableObject {
         experienceStore.addExp(delta: quests[index].rewardExp)
         recordExpGainedToday(quests[index].rewardExp, experienceStore: experienceStore)
         onQuestFirstCompleted()
-        print("✅ [Quest] 單字集複習答對率超過 90% - 獲得 \(quests[index].rewardExp) EXP")
+        AppLog.quest.info("✅ [Quest] 單字集複習答對率超過 90% - 獲得 \(self.quests[index].rewardExp) EXP")
       }
     }
     // 單字集複習全對：僅一般單字測驗 (.general) 且全對時觸發
@@ -362,7 +363,7 @@ class DailyQuestService: ObservableObject {
         experienceStore.addExp(delta: quests[index].rewardExp)
         recordExpGainedToday(quests[index].rewardExp, experienceStore: experienceStore)
         onQuestFirstCompleted()
-        print("✅ [Quest] 單字集複習全對 - 獲得 \(quests[index].rewardExp) EXP")
+        AppLog.quest.info("✅ [Quest] 單字集複習全對 - 獲得 \(self.quests[index].rewardExp) EXP")
       }
     }
     // 選擇題測驗全對：僅選擇題測驗 (.multipleChoice) 且全對時觸發
@@ -377,7 +378,7 @@ class DailyQuestService: ObservableObject {
         experienceStore.addExp(delta: quests[index].rewardExp)
         recordExpGainedToday(quests[index].rewardExp, experienceStore: experienceStore)
         onQuestFirstCompleted()
-        print("✅ [Quest] 選擇題測驗全對 - 獲得 \(quests[index].rewardExp) EXP")
+        AppLog.quest.info("✅ [Quest] 選擇題測驗全對 - 獲得 \(self.quests[index].rewardExp) EXP")
       }
     }
   }
@@ -393,7 +394,7 @@ class DailyQuestService: ObservableObject {
       if !wasCompleted && quests[index].isCompleted, let store = experienceStore {
         store.addExp(delta: quests[index].rewardExp)
         onQuestFirstCompleted()
-        print("✅ [Quest] \(quests[index].title) - 獲得 \(quests[index].rewardExp) EXP")
+        AppLog.quest.info("✅ [Quest] \(self.quests[index].title) - 獲得 \(self.quests[index].rewardExp) EXP")
       }
     }
   }
