@@ -33,70 +33,36 @@ class ExperienceStore: ObservableObject {
   // 使用 weak 引用避免循環引用
   weak var authService: AuthService?
   
-  // Published 屬性，UI 會自動更新
-  // 注意：@Published 的 didSet 會在屬性變更時立即執行，通常已在主線程
-  // 優化：不在 didSet 中觸發 Widget 刷新，改為在 addExp 完成後統一刷新，避免重複呼叫
+  // Published 屬性，UI 會自動更新。
+  // didSet 內呼叫的 UserDefaults / os.Logger 皆為 thread-safe，毋需手動派發到主線程。
+  // Widget 刷新統一在 addExp 完成後觸發一次，避免重複。
   @Published var level: Int {
     didSet {
-      // UserDefaults 操作（@Published 通常已在主線程，但為安全起見確保在主線程）
-      if Thread.isMainThread {
-        userDefaults.set(level, forKey: AppGroup.Keys.level)
-        userDefaults.synchronize()
-        #if DEBUG
-        AppLog.exp.info("📊 [EXP] Level 更新: \(self.level)")
-        #endif
-      } else {
-        DispatchQueue.main.async { [weak self] in
-          guard let self = self else { return }
-          self.userDefaults.set(self.level, forKey: AppGroup.Keys.level)
-          self.userDefaults.synchronize()
-          #if DEBUG
-          AppLog.exp.info("📊 [EXP] Level 更新: \(self.level)")
-          #endif
-        }
-      }
+      userDefaults.set(level, forKey: AppGroup.Keys.level)
+      userDefaults.synchronize()
+      #if DEBUG
+      AppLog.exp.info("📊 [EXP] Level 更新: \(self.level)")
+      #endif
     }
   }
 
   @Published var exp: Int {
     didSet {
-      if Thread.isMainThread {
-        userDefaults.set(exp, forKey: AppGroup.Keys.exp)
-        userDefaults.synchronize()
-        #if DEBUG
-        AppLog.exp.info("📊 [EXP] EXP 更新: \(self.exp)")
-        #endif
-      } else {
-        DispatchQueue.main.async { [weak self] in
-          guard let self = self else { return }
-          self.userDefaults.set(self.exp, forKey: AppGroup.Keys.exp)
-          self.userDefaults.synchronize()
-          #if DEBUG
-          AppLog.exp.info("📊 [EXP] EXP 更新: \(self.exp)")
-          #endif
-        }
-      }
+      userDefaults.set(exp, forKey: AppGroup.Keys.exp)
+      userDefaults.synchronize()
+      #if DEBUG
+      AppLog.exp.info("📊 [EXP] EXP 更新: \(self.exp)")
+      #endif
     }
   }
 
   @Published var expToNext: Int {
     didSet {
-      if Thread.isMainThread {
-        userDefaults.set(expToNext, forKey: AppGroup.Keys.expToNext)
-        userDefaults.synchronize()
-        #if DEBUG
-        AppLog.exp.info("📊 [EXP] expToNext 更新: \(self.expToNext)")
-        #endif
-      } else {
-        DispatchQueue.main.async { [weak self] in
-          guard let self = self else { return }
-          self.userDefaults.set(self.expToNext, forKey: AppGroup.Keys.expToNext)
-          self.userDefaults.synchronize()
-          #if DEBUG
-          AppLog.exp.info("📊 [EXP] expToNext 更新: \(self.expToNext)")
-          #endif
-        }
-      }
+      userDefaults.set(expToNext, forKey: AppGroup.Keys.expToNext)
+      userDefaults.synchronize()
+      #if DEBUG
+      AppLog.exp.info("📊 [EXP] expToNext 更新: \(self.expToNext)")
+      #endif
     }
   }
   
@@ -186,15 +152,9 @@ class ExperienceStore: ObservableObject {
     }
     #endif
     
-    // 統一觸發 Widget 刷新（只在 addExp 完成後刷新一次，避免重複）
-    // 確保在主線程執行
-    if Thread.isMainThread {
-      WidgetReloader.reloadAll()
-    } else {
-      DispatchQueue.main.async {
-        WidgetReloader.reloadAll()
-      }
-    }
+    // 統一觸發 Widget 刷新（只在 addExp 完成後刷新一次，避免重複）。
+    // WidgetCenter 為 thread-safe，毋需手動派發到主線程。
+    WidgetReloader.reloadAll()
     
     // 自動同步到雲端（背景執行，不阻塞 UI）
     Task {

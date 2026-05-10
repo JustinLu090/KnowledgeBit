@@ -6,7 +6,6 @@ import SwiftUI
 import Combine
 import Supabase
 import GoogleSignIn
-import WidgetKit
 import os
 
 @MainActor
@@ -30,19 +29,8 @@ final class AuthService: ObservableObject {
   /// Debounce 間隔：此時間內不重複打 Supabase
   private static let profileSyncDebounceInterval: TimeInterval = 45
   
-  // MARK: - App Group UserDefaults（與 Widget 共用；AuthService 為 @MainActor，讀寫皆在主線程，符合 CFPrefs 規範）
-  private static let appGroupKeys = (
-    displayName: AppGroup.Keys.displayName,
-    avatarURL: AppGroup.Keys.avatarURL,
-    userId: AppGroup.Keys.userId,
-    level: AppGroup.Keys.level,
-    exp: AppGroup.Keys.exp,
-    expToNext: AppGroup.Keys.expToNext
-  )
-  
-  private var appGroupDefaults: UserDefaults? {
-    AppGroup.sharedUserDefaults()
-  }
+  // MARK: - Widget 同步（職責委派給 WidgetSyncService）
+  private let widgetSync = WidgetSyncService()
   
   /// 是否已登入（檢查 session 是否存在且未過期）
   var isLoggedIn: Bool {
@@ -219,7 +207,7 @@ final class AuthService: ObservableObject {
   /// 登出
   func signOut() async {
     errorMessage = nil
-    clearAppGroupProfile()
+    widgetSync.clearProfile()
     do {
       try await client.auth.signOut()
     } catch {
@@ -227,79 +215,29 @@ final class AuthService: ObservableObject {
     }
   }
   
-  /// 將目前使用者的 displayName、avatarURL 寫入 App Group UserDefaults（供 Widget 等讀取，僅在主線程呼叫）
-  /// 使用線程安全的寫入方式，確保資料一致性
-  /// - Parameters:
-  ///   - displayName: 使用者顯示名稱
-  ///   - avatarURL: 頭像 URL（可選）
-  ///   - shouldReloadWidget: 是否立即觸發 Widget 刷新（預設為 true，批次同步時設為 false）
+  // MARK: - Widget 同步（薄包裝，實際邏輯在 WidgetSyncService）
+
+  /// 將 displayName / avatarURL 寫入 App Group 供 Widget 讀取。
   func saveProfileToAppGroup(displayName: String, avatarURL: String?, shouldReloadWidget: Bool = true) {
-    // 確保在主線程執行
-    guard Thread.isMainThread else {
-      Task { @MainActor in
-        self.saveProfileToAppGroup(displayName: displayName, avatarURL: avatarURL, shouldReloadWidget: shouldReloadWidget)
-      }
-      return
-    }
-    
-    guard let defaults = appGroupDefaults else {
-      AppLog.auth.notice("[App Group] sharedUserDefaults 為 nil，請確認 Signing & Capabilities 已設定 App Groups")
-      return
-    }
-    
-    // 使用線程安全的方式寫入
-    defaults.set(displayName, forKey: Self.appGroupKeys.displayName)
-    defaults.set(avatarURL, forKey: Self.appGroupKeys.avatarURL)
-    if let id = currentUserId {
-      defaults.set(id.uuidString, forKey: Self.appGroupKeys.userId)
-    }
-    // 只有在需要時才觸發 Widget 刷新（批次同步時由 syncToWidget 統一處理）
-    if shouldReloadWidget {
-      WidgetReloader.reloadAll()
-    }
+    widgetSync.syncProfile(
+      displayName: displayName,
+      avatarURL: avatarURL,
+      userId: currentUserId,
+      shouldReloadWidget: shouldReloadWidget
+    )
   }
 
-  /// 將使用者的 level、exp、expToNext 寫入 App Group UserDefaults（供 Widget 等讀取，僅在主線程呼叫）
-  /// 使用線程安全的寫入方式，確保資料一致性
-  /// - Parameters:
-  ///   - level: 使用者等級
-  ///   - exp: 當前經驗值
-  ///   - expToNext: 升級所需經驗值
-  ///   - shouldReloadWidget: 是否立即觸發 Widget 刷新（預設為 true，批次同步時設為 false）
+  /// 將 level / exp / expToNext 寫入 App Group 供 Widget 讀取。
   func saveExpToAppGroup(level: Int, exp: Int, expToNext: Int, shouldReloadWidget: Bool = true) {
-    // 確保在主線程執行（AuthService 為 @MainActor，但為安全起見再次確認）
-    guard Thread.isMainThread else {
-      Task { @MainActor in
-        self.saveExpToAppGroup(level: level, exp: exp, expToNext: expToNext, shouldReloadWidget: shouldReloadWidget)
-      }
-      return
-    }
-    
-    guard let defaults = appGroupDefaults else {
-      AppLog.auth.notice("[App Group] sharedUserDefaults 為 nil，請確認 Signing & Capabilities 已設定 App Groups")
-      return
-    }
-    
-    defaults.set(level, forKey: Self.appGroupKeys.level)
-    defaults.set(exp, forKey: Self.appGroupKeys.exp)
-    defaults.set(expToNext, forKey: Self.appGroupKeys.expToNext)
-    // synchronize() 已於 iOS 12 後廢棄，系統會自動持久化，不需手動呼叫
-    AppLog.auth.info("[App Group] 已同步等級與經驗值 - Level: \(level), EXP: \(exp)/\(expToNext)")
-    
-    // 只有在需要時才觸發 Widget 刷新（批次同步時由 syncToWidget 統一處理）
-    if shouldReloadWidget {
-      WidgetReloader.reloadAll()
-    }
+    widgetSync.syncExp(
+      level: level,
+      exp: exp,
+      expToNext: expToNext,
+      shouldReloadWidget: shouldReloadWidget
+    )
   }
-  
-  /// 批次同步所有使用者資料到 App Group（供 Widget 讀取）
-  /// 在一次完整的同步流程中，使用此方法可以避免多次觸發 Widget 刷新
-  /// - Parameters:
-  ///   - displayName: 使用者顯示名稱（可選，nil 時不更新）
-  ///   - avatarURL: 頭像 URL（可選，nil 時不更新）
-  ///   - level: 使用者等級（可選，nil 時不更新）
-  ///   - exp: 當前經驗值（可選，nil 時不更新）
-  ///   - expToNext: 升級所需經驗值（可選，nil 時不更新）
+
+  /// 批次同步：一次寫入多欄位並僅觸發一次 Widget reload。
   func syncToWidget(
     displayName: String? = nil,
     avatarURL: String? = nil,
@@ -307,79 +245,14 @@ final class AuthService: ObservableObject {
     exp: Int? = nil,
     expToNext: Int? = nil
   ) {
-    // 確保在主線程執行
-    guard Thread.isMainThread else {
-      Task { @MainActor in
-        self.syncToWidget(displayName: displayName, avatarURL: avatarURL, level: level, exp: exp, expToNext: expToNext)
-      }
-      return
-    }
-    
-    guard let defaults = appGroupDefaults else {
-      AppLog.auth.notice("[App Group] sharedUserDefaults 為 nil，請確認 Signing & Capabilities 已設定 App Groups")
-      return
-    }
-    
-    var hasUpdates = false
-    
-    // 批次寫入所有需要更新的資料（不立即刷新）
-    if let name = displayName {
-      defaults.set(name, forKey: Self.appGroupKeys.displayName)
-      hasUpdates = true
-    }
-    
-    if let url = avatarURL {
-      defaults.set(url, forKey: Self.appGroupKeys.avatarURL)
-      hasUpdates = true
-    } else if avatarURL == nil && displayName != nil {
-      // 如果明確傳入 nil，清除頭像 URL
-      defaults.removeObject(forKey: Self.appGroupKeys.avatarURL)
-      hasUpdates = true
-    }
-    
-    if let id = currentUserId, (displayName != nil || avatarURL != nil) {
-      defaults.set(id.uuidString, forKey: Self.appGroupKeys.userId)
-      hasUpdates = true
-    }
-    
-    if let lvl = level {
-      defaults.set(lvl, forKey: Self.appGroupKeys.level)
-      hasUpdates = true
-    }
-    
-    if let e = exp {
-      defaults.set(e, forKey: Self.appGroupKeys.exp)
-      hasUpdates = true
-    }
-    
-    if let etn = expToNext {
-      defaults.set(etn, forKey: Self.appGroupKeys.expToNext)
-      hasUpdates = true
-    }
-    
-    // 只有在有更新時才同步並刷新
-    if hasUpdates {
-      AppLog.auth.info("[App Group] 批次同步完成 - displayName: \(displayName ?? "未更新"), level: \(level?.description ?? "未更新"), exp: \(exp?.description ?? "未更新")")
-      
-      // 統一觸發一次 Widget 刷新（使用防抖機制）
-      WidgetReloader.reloadAll()
-    }
-  }
-  
-  /// 從 App Group 讀取上次寫入的 displayName、avatarURL
-  func loadProfileFromAppGroup() -> (displayName: String?, avatarURL: String?) {
-    guard let defaults = appGroupDefaults else { return (nil, nil) }
-    let name = defaults.string(forKey: Self.appGroupKeys.displayName)
-    let url = defaults.string(forKey: Self.appGroupKeys.avatarURL)
-    return (name, url)
-  }
-  
-  /// 登出時清除 App Group 中的 profile 快取
-  private func clearAppGroupProfile() {
-    guard let defaults = appGroupDefaults else { return }
-    defaults.removeObject(forKey: Self.appGroupKeys.displayName)
-    defaults.removeObject(forKey: Self.appGroupKeys.avatarURL)
-    defaults.removeObject(forKey: Self.appGroupKeys.userId)
+    widgetSync.syncBatch(
+      displayName: displayName,
+      avatarURL: avatarURL,
+      userId: currentUserId,
+      level: level,
+      exp: exp,
+      expToNext: expToNext
+    )
   }
   
   /// 強制以目前 Auth session 的 userMetadata 同步到 Supabase user_profiles 與 App Group（登入成功或 App 啟動時呼叫）

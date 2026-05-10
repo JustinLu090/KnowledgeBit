@@ -6,19 +6,19 @@ import Foundation
 import os
 
 /// Helper struct to reload widget timelines when data changes in the main app
-struct WidgetReloader {
+nonisolated struct WidgetReloader {
   /// The widget kind identifier
   static let widgetKind = "KnowledgeWidget"
-  
+
   /// 防抖時間間隔（秒），短時間內多次呼叫只執行一次
   private static let debounceInterval: TimeInterval = 0.5
-  
+
   /// 最後一次刷新的時間戳
-  private static var lastReloadTime: Date?
-  
+  nonisolated(unsafe) private static var lastReloadTime: Date?
+
   /// 待執行的刷新任務
-  private static var pendingTask: Task<Void, Never>?
-  
+  nonisolated(unsafe) private static var pendingTask: Task<Void, Never>?
+
   /// 線程安全的鎖
   private static let lock = NSLock()
   

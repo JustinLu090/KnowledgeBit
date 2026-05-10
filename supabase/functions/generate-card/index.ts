@@ -1,5 +1,5 @@
-// Supabase Edge Function: 根據使用者輸入的主題，用 Google Gemini 產生「多張」單字卡，歸於同一單字集。
-// API Key 請在 Supabase Dashboard 設定 Secret: GEMINI_API_KEY
+// Supabase Edge Function: 根據使用者輸入的主題，用 OpenAI gpt-4o-mini 產生「多張」單字卡，歸於同一單字集。
+// API Key 請在 Supabase Dashboard 設定 Secret: OPENAI_API_KEY
 declare const Deno: {
   serve: (handler: (req: Request) => Response | Promise<Response>) => void;
   env: { get(key: string): string | undefined };
@@ -22,7 +22,8 @@ interface GeneratedCardItem {
   example_sentence: string;
 }
 
-const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
+const OPENAI_MODEL = Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -30,10 +31,10 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const apiKey = Deno.env.get("GEMINI_API_KEY");
+    const apiKey = Deno.env.get("OPENAI_API_KEY");
     if (!apiKey) {
       return new Response(
-        JSON.stringify({ error: "GEMINI_API_KEY not configured" }),
+        JSON.stringify({ error: "OPENAI_API_KEY not configured" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -56,7 +57,7 @@ Deno.serve(async (req) => {
         : "";
 
     const systemPrompt = `你是一個單字卡助手。根據使用者給的「主題」（例如：餐廳用餐、旅行、程式用語），產生「多張」獨立的單字卡，每張卡一個單字/詞。
-回傳必須是「一個 JSON 陣列」，陣列中每個元素代表一張單字卡，且只包含以下三個欄位（不要多餘的 markdown 程式碼區塊或說明）：
+回傳必須是「一個 JSON 物件」，包含一個 "cards" 欄位，其值為單字卡陣列。每張單字卡只包含以下三個欄位（不要多餘的 markdown 程式碼區塊或說明）：
 - "word": 單字或詞（英文或目標語言，簡短）
 - "definition": 中文或使用者語言的定義/解釋，簡潔
 - "example_sentence": 一句例句（可含中文翻譯），幫助記憶
@@ -64,40 +65,55 @@ Deno.serve(async (req) => {
 請依主題產出 5～10 張單字卡，品質優先。${existingHint}
 
 回傳格式範例：
-[{"word":"vocabulary","definition":"詞彙","example_sentence":"I need to expand my vocabulary. (我需要擴充詞彙。)"},{"word":"..."}]`;
+{"cards":[{"word":"vocabulary","definition":"詞彙","example_sentence":"I need to expand my vocabulary. (我需要擴充詞彙。)"},{"word":"..."}]}`;
 
-    const response = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
+    const response = await fetch(OPENAI_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: `主題：${prompt}` }] }],
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        generationConfig: {
-          temperature: 0.6,
-          responseMimeType: "application/json",
-        },
+        model: OPENAI_MODEL,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: `主題：${prompt}` },
+        ],
+        temperature: 0.6,
+        response_format: { type: "json_object" },
       }),
     });
 
     if (!response.ok) {
       const errText = await response.text();
       return new Response(
-        JSON.stringify({ error: "Gemini request failed", detail: errText }),
+        JSON.stringify({ error: "OpenAI request failed", detail: errText }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     const data = await response.json();
-    const textPart = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!textPart) {
+    const textPart = data?.choices?.[0]?.message?.content;
+    if (typeof textPart !== "string" || textPart.length === 0) {
       return new Response(
-        JSON.stringify({ error: "Empty response from Gemini", raw: data }),
+        JSON.stringify({ error: "Empty response from OpenAI", raw: data }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const parsed = JSON.parse(textPart) as GeneratedCardItem[];
-    if (!Array.isArray(parsed) || parsed.length === 0) {
+    let parsedRaw: unknown;
+    try {
+      parsedRaw = JSON.parse(textPart);
+    } catch {
+      return new Response(
+        JSON.stringify({ error: "Invalid JSON from OpenAI", raw: textPart }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const parsedObj = parsedRaw && typeof parsedRaw === "object" ? parsedRaw as Record<string, unknown> : null;
+    const parsed = parsedObj && Array.isArray(parsedObj.cards) ? parsedObj.cards as GeneratedCardItem[] : null;
+    if (!parsed || parsed.length === 0) {
       return new Response(
         JSON.stringify({ error: "Invalid or empty cards array", raw: textPart }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }

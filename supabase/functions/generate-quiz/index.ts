@@ -1,5 +1,5 @@
 // Supabase Edge Function: 依單字集產生「挖空句 + 四選一」選擇題，供選擇題測驗使用。
-// API Key: GEMINI_API_KEY（與 generate-card 相同）
+// API Key: OPENAI_API_KEY（與 generate-card 相同）
 declare const Deno: {
   serve: (handler: (req: Request) => Response | Promise<Response>) => void;
   env: { get(key: string): string | undefined };
@@ -28,16 +28,17 @@ interface QuizQuestionItem {
   explanation: string;
 }
 
-const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
+const OPENAI_MODEL = Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini";
 const MAX_WORDS = 15;
 
 type DetectedLang = "ko" | "ja" | "en";
 
 /** 根據單字內容辨識單字集主要語言，供 prompt 傳遞目標語言用 */
 function detectWordSetLanguage(words: { word: string }[]): DetectedLang {
-  const hangul = /[\uAC00-\uD7A3\u1100-\u11FF]/;
-  const hiraganaKatakana = /[\u3040-\u309F\u30A0-\u30FF]/;
-  const cjkKanji = /[\u4E00-\u9FFF\u3400-\u4DBF]/; // 漢字（日文常用），與中文共用
+  const hangul = /[가-힣ᄀ-ᇿ]/;
+  const hiraganaKatakana = /[぀-ゟ゠-ヿ]/;
+  const cjkKanji = /[一-鿿㐀-䶿]/; // 漢字（日文常用），與中文共用
   let ko = 0, ja = 0;
   for (const w of words) {
     if (hangul.test(w.word)) ko++;
@@ -83,7 +84,7 @@ const SYSTEM_PROMPT = `你是一個出題助手。根據給定的單字清單與
 
 ## 出題與回傳
 - 正確答案必須來自清單中的單字；四個選項為一個正確答案 + 三個干擾項（與正確答案詞性/情境相近），選項順序請打亂。
-- 回傳必須是「一個 JSON 陣列」，每個元素包含以下四個欄位（不要 markdown 程式碼區塊或額外說明）：
+- 回傳必須是「一個 JSON 物件」，包含一個 "questions" 欄位，其值為題目陣列。每題包含以下四個欄位（不要 markdown 程式碼區塊或額外說明）：
   - "sentence_with_blank": 題目句子，挖空處為**單一連續** \`_______\`（字串內禁止對底線分段或換行）
   - "correct_answer": 正確單字（字串）
   - "options": 長度為 4 的字串陣列，與目標語言一致
@@ -92,7 +93,7 @@ const SYSTEM_PROMPT = `你是一個出題助手。根據給定的單字清單與
 請依清單產出 5～10 題，每題對應不同單字。
 
 範例（目標語言為韓文時）：
-[{"sentence_with_blank":"이번 휴가에는 제주도로 _______을 가기로 했습니다.","correct_answer":"여행","options":["여행","요리","공부","운동"],"explanation":"這句話的意思是『這次假期決定去濟州島旅遊』。'여행'（旅遊）最符合語境。'요리' 是烹飪，'공부' 是學習，'운동' 是運動。"}]`;
+{"questions":[{"sentence_with_blank":"이번 휴가에는 제주도로 _______을 가기로 했습니다.","correct_answer":"여행","options":["여행","요리","공부","운동"],"explanation":"這句話的意思是『這次假期決定去濟州島旅遊』。'여행'（旅遊）最符合語境。'요리' 是烹飪，'공부' 是學習，'운동' 是運動。"}]}`;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -100,10 +101,10 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const apiKey = Deno.env.get("GEMINI_API_KEY");
+    const apiKey = Deno.env.get("OPENAI_API_KEY");
     if (!apiKey) {
       return new Response(
-        JSON.stringify({ error: "GEMINI_API_KEY not configured" }),
+        JSON.stringify({ error: "OPENAI_API_KEY not configured" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -137,47 +138,53 @@ Deno.serve(async (req) => {
     const targetLanguageLabel = explicitLang ?? LANG_LABEL[detectedLang];
     const userMessage = `目標語言：${targetLanguageLabel}\n\n單字清單：\n${wordsForPrompt}`;
 
-    const response = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
+    const response = await fetch(OPENAI_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: userMessage }] }],
-        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-        generationConfig: {
-          temperature: 0.5,
-          responseMimeType: "application/json",
-        },
+        model: OPENAI_MODEL,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: userMessage },
+        ],
+        temperature: 0.5,
+        response_format: { type: "json_object" },
       }),
     });
 
     if (!response.ok) {
       const errText = await response.text();
       return new Response(
-        JSON.stringify({ error: "Gemini request failed", detail: errText }),
+        JSON.stringify({ error: "OpenAI request failed", detail: errText }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     const data = await response.json();
-    const textPart = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!textPart) {
+    const textPart = data?.choices?.[0]?.message?.content;
+    if (typeof textPart !== "string" || textPart.length === 0) {
       return new Response(
-        JSON.stringify({ error: "Empty response from Gemini", raw: data }),
+        JSON.stringify({ error: "Empty response from OpenAI", raw: data }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    let parsed: QuizQuestionItem[];
+    let parsedRaw: unknown;
     try {
-      parsed = JSON.parse(textPart) as QuizQuestionItem[];
+      parsedRaw = JSON.parse(textPart);
     } catch {
       return new Response(
-        JSON.stringify({ error: "Invalid JSON from Gemini", raw: textPart }),
+        JSON.stringify({ error: "Invalid JSON from OpenAI", raw: textPart }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    if (!Array.isArray(parsed) || parsed.length === 0) {
+    const parsedObj = parsedRaw && typeof parsedRaw === "object" ? parsedRaw as Record<string, unknown> : null;
+    const parsed = parsedObj && Array.isArray(parsedObj.questions) ? parsedObj.questions as QuizQuestionItem[] : null;
+    if (!parsed || parsed.length === 0) {
       return new Response(
         JSON.stringify({ error: "Invalid or empty questions array", raw: textPart }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }

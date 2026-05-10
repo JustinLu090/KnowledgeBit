@@ -1,10 +1,10 @@
 // WordSetDetailView.swift
-// Detail view showing cards in a word set and quiz option
+// 單字集詳情：顯示卡片清單、共編成員、開啟複習/選擇題/對戰。
+// 業務邏輯位於 WordSetDetailViewModel；本檔僅負責 UI 呈現與導覽。
 
 import SwiftUI
 import SwiftData
 import WidgetKit
-import os
 
 struct WordSetDetailView: View {
   @Bindable var wordSet: WordSet
@@ -13,18 +13,15 @@ struct WordSetDetailView: View {
   @EnvironmentObject var experienceStore: ExperienceStore
   @EnvironmentObject var questService: DailyQuestService
   @EnvironmentObject var authService: AuthService
+
+  @StateObject private var vm = WordSetDetailViewModel()
+
+  // UI 流程旗標（純 View 層）
   @State private var showingQuiz = false
   @State private var showingChoiceQuiz = false
-  @State private var generatedQuestions: [ChoiceQuestion]?
-  @State private var quizGenerateError: String?
-  @State private var isGeneratingQuiz = false
-  @State private var quizGenerationTask: Task<Void, Never>?
   @State private var showingCollaboratorPicker = false
-  @State private var collaborators: [WordSetCollaborator] = []
-  @State private var selectedCollaboratorIds: Set<UUID> = []
   @State private var showingCollaboratorList = false
-  @State private var activeBattleSession: BattleSession? = nil
-  @State private var isLoadingBattleSession = false
+
   @State private var cachedSortedCards: [Card] = []
 
   /// 是否為此單字集的創辦人（依 Supabase word_sets.user_id 映射到本機 ownerUserId）
@@ -34,15 +31,12 @@ struct WordSetDetailView: View {
     return wordSet.ownerUserId == nil || wordSet.ownerUserId == currentId
   }
 
-  // Fetch cards for this word set
   private var cards: [Card] {
     cachedSortedCards
   }
 
-  /// 此單字集內「除了自己」以外的成員（用於標題列頭像，不顯示自己的頭像）
   private var otherCollaborators: [WordSetCollaborator] {
-    guard let currentId = authService.currentUserId else { return collaborators }
-    return collaborators.filter { $0.userId != currentId }
+    vm.otherCollaborators(currentUserId: authService.currentUserId)
   }
 
   var body: some View {
@@ -59,133 +53,23 @@ struct WordSetDetailView: View {
           ForEach(cards) { card in
             NavigationLink {
               CardDetailView(card: card)
-            }             label: {
+            } label: {
               Text(card.title)
                 .font(.headline)
             }
           }
-          .onDelete(perform: deleteCards)
+          .onDelete { offsets in
+            withAnimation {
+              vm.deleteCards(at: offsets, in: cards, modelContext: modelContext, authService: authService)
+            }
+          }
         }
       }
     }
     .navigationTitle("")
     .navigationBarTitleDisplayMode(.inline)
-    .toolbar {
-      ToolbarItem(placement: .principal) {
-        HStack(spacing: 8) {
-          Text(wordSet.title)
-            .font(.headline.weight(.bold))
-          if !otherCollaborators.isEmpty {
-            collaboratorAvatarRow
-          }
-        }
-      }
-      ToolbarItemGroup(placement: .primaryAction) {
-        // 只有創辦人可以管理共編與發起對戰，其餘共編者僅能編輯單字與參與已存在的戰鬥
-        if isOwner {
-          Button {
-            Task {
-              // 先將單字集同步到 Supabase，避免後端 create_word_set_invitation 回傳 "word_set not found"
-              if let sync = CardWordSetSyncService.createIfLoggedIn(authService: authService) {
-                await sync.syncWordSet(wordSet)
-              }
-              await loadCollaborators()
-              showingCollaboratorPicker = true
-            }
-          } label: {
-            Image(systemName: "person.badge.plus")
-          }
-        }
-
-        NavigationLink {
-          AddCardView(wordSet: wordSet)
-        } label: {
-          Image(systemName: "plus")
-        }
-
-        NavigationLink {
-          LectureImportView(wordSet: wordSet)
-        } label: {
-          Image(systemName: "doc.text.viewfinder")
-        }
-        .help("匯入 PDF 講義，產生摘要與測驗")
-
-        Button {
-          AppGroup.sharedUserDefaults()?.set(wordSet.id.uuidString, forKey: AppGroup.Keys.widgetWordSetId)
-          WidgetReloader.reloadAll()
-        } label: {
-          Image(systemName: "rectangle.3.group")
-        }
-        .help("設為 Widget 單字集")
-      }
-    }
-    .safeAreaInset(edge: .bottom) {
-      Group {
-        if !cards.isEmpty {
-          HStack(spacing: 10) {
-            Button(action: { showingQuiz = true }) {
-              bottomBarButtonLabel(systemImage: "play.fill", title: "開始複習")
-            }
-            .buttonStyle(.plain)
-            .background(Color.blue)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .foregroundColor(.white)
-
-            Button(action: startChoiceQuiz) {
-              bottomBarButtonLabel(systemImage: "list.bullet.rectangle.fill", title: "選擇題測驗")
-            }
-            .buttonStyle(.plain)
-            .background(Color.orange.opacity(0.92))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .foregroundColor(.white)
-
-            Group {
-              if let session = activeBattleSession, session.isActive() {
-                NavigationLink {
-                  BattleRoomView(
-                    roomId: session.roomId,
-                    wordSetID: session.wordSetID,
-                    wordSetTitle: wordSet.title,
-                    startDate: session.startDate,
-                    durationDays: session.durationDays,
-                    invitedMemberIDs: session.invitedMemberIDs,
-                    creatorId: session.creatorId
-                  )
-                } label: {
-                  bottomBarButtonLabel(systemImage: "flag.2.crossed.fill", title: "對戰詳情")
-                }
-                .buttonStyle(.plain)
-                .background(Color.purple.opacity(0.92))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .foregroundColor(.white)
-              } else if isOwner {
-                NavigationLink {
-                  BattleInitiationView(wordSetID: wordSet.id, wordSetTitle: wordSet.title)
-                } label: {
-                  bottomBarButtonLabel(systemImage: "person.2.fill", title: "發起對戰")
-                }
-                .buttonStyle(.plain)
-                .background(Color.purple.opacity(0.92))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .foregroundColor(.white)
-              } else if isLoadingBattleSession {
-                bottomBarStatusLabel(systemImage: nil, title: "檢查戰鬥中…")
-                  .background(Color(.systemGray5))
-                  .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                  .foregroundColor(.secondary)
-              } else {
-                bottomBarStatusLabel(systemImage: "hourglass", title: "等待對戰")
-                  .background(Color(.systemGray5))
-                  .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                  .foregroundColor(.secondary)
-              }
-            }
-          }
-          .padding()
-          .background(Color(UIColor.systemGroupedBackground))
-        }
-      }
-    }
+    .toolbar { toolbarContent }
+    .safeAreaInset(edge: .bottom) { bottomBar }
     .fullScreenCover(isPresented: $showingQuiz) {
       QuizView(cards: cards, language: wordSet.language, wordSetId: wordSet.id, wordSetTitle: wordSet.title)
         .environmentObject(taskService)
@@ -204,215 +88,252 @@ struct WordSetDetailView: View {
       CollaboratorPickerView(
         authService: authService,
         wordSetId: wordSet.id,
-        initialSelectedIds: Set(collaborators.map(\.userId))
+        initialSelectedIds: Set(vm.collaborators.map(\.userId))
       ) { updated in
-        collaborators = updated
+        vm.setCollaborators(updated)
       }
     }
     .sheet(isPresented: $showingCollaboratorList) {
-      CollaboratorListSheet(collaborators: collaborators)
+      CollaboratorListSheet(collaborators: vm.collaborators)
     }
     .task {
       // Cache the sorted list once on appear; avoid re-sorting on every render.
       cachedSortedCards = wordSet.cards.sorted { $0.createdAt > $1.createdAt }
-      await loadCollaborators()
-      await pullCardsForWordSetIfNeeded()
-      await loadActiveBattleIfNeeded()
+      await vm.loadCollaborators(wordSetId: wordSet.id, authService: authService)
+      await vm.pullCardsForWordSetIfNeeded(wordSet: wordSet, modelContext: modelContext, authService: authService)
+      await vm.loadActiveBattleIfNeeded(wordSetId: wordSet.id, authService: authService)
     }
     .onChange(of: wordSet.cards.count) { _, _ in
       cachedSortedCards = wordSet.cards.sorted { $0.createdAt > $1.createdAt }
     }
+    .handleAppError($vm.errorMessage)
   }
 
-  /// 從 Supabase 拉取此單字集的卡片（共編時可看到對方新增的單字卡）
-  private func pullCardsForWordSetIfNeeded() async {
-    guard let sync = CardWordSetSyncService.createIfLoggedIn(authService: authService) else { return }
-    await sync.pullCardsForWordSet(wordSet: wordSet, modelContext: modelContext)
-  }
+  // MARK: - Toolbar
 
-  private func loadCollaborators() async {
-    guard let currentUserId = authService.currentUserId else { return }
-    let service = WordSetCollaboratorService(authService: authService, userId: currentUserId)
-    do {
-      collaborators = try await service.fetchCollaborators(wordSetId: wordSet.id)
-    } catch {
-      AppLog.wordset.info("⚠️ [WordSet] fetchCollaborators 失敗: \(error)")
-    }
-  }
-
-  /// 載入此單字集是否有進行中的對戰（創辦人與共編者都會用到，用來顯示「對戰詳情」或「發起對戰」）
-  private func loadActiveBattleIfNeeded() async {
-    guard let currentUserId = authService.currentUserId else { return }
-    isLoadingBattleSession = true
-    defer { isLoadingBattleSession = false }
-
-    let service = BattleRoomService(authService: authService, userId: currentUserId)
-    do {
-      if let session = try await service.fetchActiveRoom(wordSetID: wordSet.id) {
-        await MainActor.run {
-          activeBattleSession = session
+  @ToolbarContentBuilder
+  private var toolbarContent: some ToolbarContent {
+    ToolbarItem(placement: .principal) {
+      HStack(spacing: 8) {
+        Text(wordSet.title)
+          .font(.headline.weight(.bold))
+        if !otherCollaborators.isEmpty {
+          collaboratorAvatarRow
         }
       }
-    } catch {
-      // 使用者快速離開畫面時 task 會被取消，屬於預期行為，不當作失敗
-      let ns = error as NSError
-      if ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled { return }
-      AppLog.wordset.info("⚠️ [WordSet] loadActiveBattleIfNeeded 失敗: \(error)")
     }
-  }
-
-  private func startChoiceQuiz() {
-    showingChoiceQuiz = true
-    isGeneratingQuiz = true
-    quizGenerateError = nil
-    generatedQuestions = nil
-    quizGenerationTask?.cancel()
-    // 先讓 loading cover 真正顯示，再開始 AI 生成，避免提示畫面來不及渲染就被略過。
-    Task { @MainActor in
-      await Task.yield()
-      guard showingChoiceQuiz, isGeneratingQuiz else { return }
-      launchChoiceQuizGeneration()
-    }
-  }
-
-  private func launchChoiceQuizGeneration() {
-    quizGenerationTask?.cancel()
-    quizGenerationTask = Task {
-      do {
-        let q = try await AIService(client: authService.getClient()).generateQuizQuestions(cards: cards, targetLanguage: wordSet.title)
-        if Task.isCancelled { return }
-        await MainActor.run {
-          generatedQuestions = q
-          isGeneratingQuiz = false
-        }
-      } catch {
-        if Task.isCancelled { return }
-        await MainActor.run {
-          quizGenerateError = error.localizedDescription
-          isGeneratingQuiz = false
+    ToolbarItemGroup(placement: .primaryAction) {
+      // 只有創辦人可以管理共編與發起對戰，其餘共編者僅能編輯單字與參與已存在的戰鬥
+      if isOwner {
+        Button {
+          Task {
+            // 先將單字集同步到 Supabase，避免後端 create_word_set_invitation 回傳 "word_set not found"
+            if let sync = CardWordSetSyncService.createIfLoggedIn(authService: authService) {
+              await sync.syncWordSet(wordSet)
+            }
+            await vm.loadCollaborators(wordSetId: wordSet.id, authService: authService)
+            showingCollaboratorPicker = true
+          }
+        } label: {
+          Image(systemName: "person.badge.plus")
         }
       }
+
+      NavigationLink {
+        AddCardView(wordSet: wordSet)
+      } label: {
+        Image(systemName: "plus")
+      }
+
+      NavigationLink {
+        LectureImportView(wordSet: wordSet)
+      } label: {
+        Image(systemName: "doc.text.viewfinder")
+      }
+      .help("匯入 PDF 講義，產生摘要與測驗")
+
+      Button {
+        AppGroup.sharedUserDefaults()?.set(wordSet.id.uuidString, forKey: AppGroup.Keys.widgetWordSetId)
+        WidgetReloader.reloadAll()
+      } label: {
+        Image(systemName: "rectangle.3.group")
+      }
+      .help("設為 Widget 單字集")
+    }
+  }
+
+  // MARK: - Bottom Bar
+
+  @ViewBuilder
+  private var bottomBar: some View {
+    if !cards.isEmpty {
+      HStack(spacing: 10) {
+        Button(action: { showingQuiz = true }) {
+          bottomBarButtonLabel(systemImage: "play.fill", title: "開始複習")
+        }
+        .buttonStyle(.plain)
+        .background(Color.blue)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .foregroundColor(.white)
+
+        Button(action: triggerChoiceQuiz) {
+          bottomBarButtonLabel(systemImage: "list.bullet.rectangle.fill", title: "選擇題測驗")
+        }
+        .buttonStyle(.plain)
+        .background(Color.orange.opacity(0.92))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .foregroundColor(.white)
+
+        battleEntry
+      }
+      .padding()
+      .background(Color(UIColor.systemGroupedBackground))
     }
   }
 
   @ViewBuilder
+  private var battleEntry: some View {
+    if let session = vm.activeBattleSession, session.isActive() {
+      NavigationLink {
+        BattleRoomView(
+          roomId: session.roomId,
+          wordSetID: session.wordSetID,
+          wordSetTitle: wordSet.title,
+          startDate: session.startDate,
+          durationDays: session.durationDays,
+          invitedMemberIDs: session.invitedMemberIDs,
+          creatorId: session.creatorId
+        )
+      } label: {
+        bottomBarButtonLabel(systemImage: "flag.2.crossed.fill", title: "對戰詳情")
+      }
+      .buttonStyle(.plain)
+      .background(Color.purple.opacity(0.92))
+      .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+      .foregroundColor(.white)
+    } else if isOwner {
+      NavigationLink {
+        BattleInitiationView(wordSetID: wordSet.id, wordSetTitle: wordSet.title)
+      } label: {
+        bottomBarButtonLabel(systemImage: "person.2.fill", title: "發起對戰")
+      }
+      .buttonStyle(.plain)
+      .background(Color.purple.opacity(0.92))
+      .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+      .foregroundColor(.white)
+    } else if vm.isLoadingBattleSession {
+      bottomBarStatusLabel(systemImage: nil, title: "檢查戰鬥中…")
+        .background(Color(.systemGray5))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .foregroundColor(.secondary)
+    } else {
+      bottomBarStatusLabel(systemImage: "hourglass", title: "等待對戰")
+        .background(Color(.systemGray5))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .foregroundColor(.secondary)
+    }
+  }
+
+  // MARK: - Choice Quiz Cover
+
+  private func triggerChoiceQuiz() {
+    showingChoiceQuiz = true
+    vm.startChoiceQuiz(cards: cards, wordSet: wordSet, authService: authService)
+  }
+
+  @ViewBuilder
   private var choiceQuizCoverContent: some View {
-    if isGeneratingQuiz {
-      NavigationStack {
-        VStack(spacing: 16) {
-          ProgressView()
-            .scaleEffect(1.2)
-          Text("正在產生題目…")
-            .font(.headline)
-            .foregroundStyle(.primary)
-          Text("這會呼叫 AI 生成題目，可能需要 30～60 秒。")
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .multilineTextAlignment(.center)
-            .padding(.horizontal, 28)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemGroupedBackground))
-        .toolbar {
-          ToolbarItem(placement: .topBarLeading) {
-            Button("取消") {
-              quizGenerationTask?.cancel()
-              quizGenerationTask = nil
-              isGeneratingQuiz = false
-              showingChoiceQuiz = false
-            }
-          }
-        }
-      }
-    } else if let err = quizGenerateError {
-      VStack(spacing: 20) {
-        Text("無法產生題目")
-          .font(.title2)
-          .bold()
-        Text(err)
-          .font(.body)
-          .foregroundStyle(.secondary)
-          .multilineTextAlignment(.center)
-          .padding(.horizontal)
-        if err.contains("timed out") || err.contains("逾時") {
-          Text("可點「重試」再試一次（第二次通常較快）")
-            .font(.caption)
-            .foregroundStyle(.tertiary)
-        }
-        HStack(spacing: 16) {
-          Button("重試") {
-            quizGenerateError = nil
-            startChoiceQuiz()
-          }
-          Button("關閉") {
-            quizGenerationTask?.cancel()
-            quizGenerationTask = nil
-            showingChoiceQuiz = false
-            quizGenerateError = nil
-          }
-          .padding()
-        }
-      }
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
-    } else if let q = generatedQuestions, !q.isEmpty {
+    if vm.isGeneratingQuiz {
+      generatingQuizView
+    } else if let err = vm.quizGenerateError {
+      quizErrorView(message: err)
+    } else if let q = vm.generatedQuestions, !q.isEmpty {
       ChoiceQuizView(
         questions: q,
         onFinish: { score, total in
-          recordChoiceQuizResult(score: score, total: total)
+          vm.recordChoiceQuizResult(
+            score: score,
+            total: total,
+            modelContext: modelContext,
+            questService: questService,
+            experienceStore: experienceStore
+          )
           showingChoiceQuiz = false
-          generatedQuestions = nil
-          quizGenerationTask = nil
+          vm.resetChoiceQuizState()
         },
         wordSetId: wordSet.id,
         wordSetTitle: wordSet.title
       )
-    } else if generatedQuestions != nil {
+    } else if vm.generatedQuestions != nil {
       VStack(spacing: 16) {
         Text("未產生題目")
           .font(.headline)
         Button("關閉") {
-          quizGenerationTask?.cancel()
-          quizGenerationTask = nil
           showingChoiceQuiz = false
-          generatedQuestions = nil
+          vm.resetChoiceQuizState()
         }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
   }
 
-  private func recordChoiceQuizResult(score: Int, total: Int) {
-    let calendar = Calendar.current
-    let today = calendar.startOfDay(for: Date())
-    let log = StudyLog(date: today, cardsReviewed: score, totalCards: total, activityType: "multipleChoiceQuiz")
-    modelContext.insert(log)
-    try? modelContext.save()
-    questService.recordWordSetCompleted(experienceStore: experienceStore)
-    let accuracy = total > 0 ? Int(Double(score) / Double(total) * 100) : 0
-    questService.recordWordSetQuizResult(accuracyPercent: accuracy, isPerfect: (total > 0 && score == total), quizType: .multipleChoice, experienceStore: experienceStore)
-  }
-  
-  private func deleteCards(offsets: IndexSet) {
-    let idsToDelete = offsets.map { cards[$0].id }
-    withAnimation {
-      for index in offsets {
-        modelContext.delete(cards[index])
+  private var generatingQuizView: some View {
+    NavigationStack {
+      VStack(spacing: 16) {
+        ProgressView()
+          .scaleEffect(1.2)
+        Text("正在產生題目…")
+          .font(.headline)
+          .foregroundStyle(.primary)
+        Text("這會呼叫 AI 生成題目，可能需要 30～60 秒。")
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
+          .multilineTextAlignment(.center)
+          .padding(.horizontal, 28)
       }
-      do {
-        try modelContext.save()
-        WidgetReloader.reloadAll()
-        if let sync = CardWordSetSyncService.createIfLoggedIn(authService: authService) {
-          Task {
-            for id in idsToDelete {
-              await sync.deleteCard(id: id)
-            }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .background(Color(.systemGroupedBackground))
+      .toolbar {
+        ToolbarItem(placement: .topBarLeading) {
+          Button("取消") {
+            vm.cancelChoiceQuizGeneration()
+            showingChoiceQuiz = false
           }
         }
-      } catch {
-        AppLog.wordset.info("❌ Failed to delete card: \(error.localizedDescription)")
       }
     }
   }
+
+  private func quizErrorView(message: String) -> some View {
+    VStack(spacing: 20) {
+      Text("無法產生題目")
+        .font(.title2)
+        .bold()
+      Text(message)
+        .font(.body)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+        .padding(.horizontal)
+      if message.contains("timed out") || message.contains("逾時") {
+        Text("可點「重試」再試一次（第二次通常較快）")
+          .font(.caption)
+          .foregroundStyle(.tertiary)
+      }
+      HStack(spacing: 16) {
+        Button("重試") {
+          vm.startChoiceQuiz(cards: cards, wordSet: wordSet, authService: authService)
+        }
+        Button("關閉") {
+          showingChoiceQuiz = false
+          vm.resetChoiceQuizState()
+        }
+        .padding()
+      }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
+
+  // MARK: - Bottom Bar Helpers
 
   private func bottomBarButtonLabel(systemImage: String, title: String) -> some View {
     VStack(spacing: 6) {
@@ -446,212 +367,9 @@ struct WordSetDetailView: View {
     .padding(.vertical, 10)
     .padding(.horizontal, 8)
   }
-}
 
-// MARK: - 共編成員挑選
+  // MARK: - Collaborator Avatar Row
 
-private struct CollaboratorPickerView: View {
-  @Environment(\.dismiss) private var dismiss
-  let authService: AuthService
-  let wordSetId: UUID
-  let initialSelectedIds: Set<UUID>
-  let onUpdated: ([WordSetCollaborator]) -> Void
-  @StateObject private var communityViewModel = CommunityViewModel()
-  @State private var localSelection: Set<UUID> = []
-  /// 已經邀請過我的使用者 ID（pending），這些人應顯示為「已加入」且不可再邀請
-  @State private var pendingInviterIds: Set<UUID> = []
-  /// 我已經發出邀請、對方尚未接受/拒絕的使用者 ID，顯示「邀請中」
-  @State private var pendingInviteeIds: Set<UUID> = []
-  /// 發送邀請後若有失敗，顯示錯誤訊息
-  @State private var sendInvitationErrorMessage: String?
-  /// 最後一筆發送失敗的後端訊息（用於顯示 word_set not found 等提示）
-  @State private var lastSendInvitationError: String?
-
-  var body: some View {
-    NavigationStack {
-      List {
-        if communityViewModel.isLoading {
-          HStack {
-            ProgressView()
-            Text("載入好友中…")
-              .foregroundStyle(.secondary)
-          }
-        } else if let error = communityViewModel.errorMessage {
-          VStack(alignment: .leading, spacing: 8) {
-            Text("載入失敗")
-              .font(.headline)
-            Text(error)
-              .font(.subheadline)
-              .foregroundStyle(.secondary)
-            Button("重試") {
-              Task { await communityViewModel.loadFriends(authService: authService) }
-            }
-            .buttonStyle(.bordered)
-          }
-        } else if communityViewModel.friends.isEmpty {
-          Text("目前尚無好友可邀請。")
-            .foregroundStyle(.secondary)
-        } else {
-          Section {
-            Text("選擇要邀請的好友，對方會在「社群」收到邀請並可選擇接受或拒絕。")
-              .font(.caption)
-              .foregroundStyle(.secondary)
-          }
-          Section("好友") {
-            ForEach(communityViewModel.friends) { friend in
-              let isAlreadyCollaborator = initialSelectedIds.contains(friend.userId) || pendingInviterIds.contains(friend.userId)
-              let isPendingInvitee = pendingInviteeIds.contains(friend.userId)
-              let cannotSelect = isAlreadyCollaborator || isPendingInvitee
-              Button {
-                if !cannotSelect { toggleSelection(friend.userId) }
-              }               label: {
-                HStack(spacing: 12) {
-                  CollaboratorAvatarView(displayName: friend.displayName, avatarURL: friend.avatarURL, size: 44)
-                  VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                      Text(friend.displayName)
-                        .font(.body)
-                      if isAlreadyCollaborator {
-                        Text("已加入")
-                          .font(.caption2)
-                          .foregroundStyle(.white)
-                          .padding(.horizontal, 6)
-                          .padding(.vertical, 2)
-                          .background(Color.green)
-                          .cornerRadius(6)
-                      } else if isPendingInvitee {
-                        Text("邀請中")
-                          .font(.caption2)
-                          .foregroundStyle(.white)
-                          .padding(.horizontal, 6)
-                          .padding(.vertical, 2)
-                          .background(Color.orange)
-                          .cornerRadius(6)
-                      }
-                    }
-                    Text("Lv \(friend.level)")
-                      .font(.caption)
-                      .foregroundStyle(.secondary)
-                  }
-                  Spacer()
-                  if isAlreadyCollaborator {
-                    Image(systemName: "checkmark.circle.fill")
-                      .foregroundStyle(.green)
-                  } else if isPendingInvitee {
-                    Image(systemName: "clock.fill")
-                      .font(.caption)
-                      .foregroundStyle(.orange)
-                  } else if localSelection.contains(friend.userId) {
-                    Image(systemName: "checkmark.circle.fill")
-                      .foregroundStyle(.blue)
-                  } else {
-                    Image(systemName: "circle")
-                      .foregroundStyle(.tertiary)
-                  }
-                }
-              }
-              .buttonStyle(.plain)
-              .disabled(cannotSelect)
-            }
-          }
-        }
-      }
-      .navigationTitle("邀請共編成員")
-      .toolbar {
-        ToolbarItem(placement: .cancellationAction) {
-          Button("取消") { dismiss() }
-        }
-        ToolbarItem(placement: .confirmationAction) {
-          Button("邀請") {
-            Task {
-              await sendInvitations()
-            }
-          }
-          .disabled(localSelection.isEmpty)
-        }
-      }
-      .task {
-        await communityViewModel.loadFriends(authService: authService)
-        localSelection = initialSelectedIds
-        if let currentUserId = authService.currentUserId {
-          let invitationService = WordSetInvitationService(authService: authService, userId: currentUserId)
-          let myPending = (try? await invitationService.fetchMyPendingInvitations()) ?? []
-          pendingInviterIds = Set(myPending.filter { $0.wordSetId == wordSetId }.map(\.inviterId))
-          let mySentPending = (try? await invitationService.fetchPendingInvitations(wordSetId: wordSetId)) ?? []
-          pendingInviteeIds = Set(mySentPending.map(\.inviteeId))
-        }
-      }
-      .alert("發送邀請失敗", isPresented: Binding(
-        get: { sendInvitationErrorMessage != nil },
-        set: { if !$0 { sendInvitationErrorMessage = nil } }
-      )) {
-        Button("確定", role: .cancel) { sendInvitationErrorMessage = nil }
-      } message: {
-        if let msg = sendInvitationErrorMessage {
-          Text(msg)
-        }
-      }
-    }
-  }
-
-  private func toggleSelection(_ id: UUID) {
-    if localSelection.contains(id) {
-      localSelection.remove(id)
-    } else {
-      localSelection.insert(id)
-    }
-  }
-
-  /// 發送邀請給選取的好友（對方需在社群接受後才會加入共編）
-  private func sendInvitations() async {
-    guard let currentUserId = authService.currentUserId else {
-      AppLog.wordset.info("⚠️ [WordSet] sendInvitations 跳過：無 currentUserId")
-      return
-    }
-    let invitationService = WordSetInvitationService(authService: authService, userId: currentUserId)
-    // 不重複邀請已是共編者、已邀請過我的人、或已發出邀請尚待回覆的人
-    let toInvite = localSelection.filter {
-      !initialSelectedIds.contains($0) && !pendingInviterIds.contains($0) && !pendingInviteeIds.contains($0)
-    }
-    AppLog.wordset.info("[WordSet] 邀請共編：wordSetId=\(wordSetId), 將發送給 \(toInvite.count) 人, targetUserIds=\(toInvite.map(\.uuidString))")
-    var successCount = 0
-    var failureCount = 0
-    var succeededIds: [UUID] = []
-    for inviteeId in toInvite {
-      do {
-        try await invitationService.sendInvitation(wordSetId: wordSetId, inviteeId: inviteeId)
-        successCount += 1
-        succeededIds.append(inviteeId)
-        AppLog.wordset.info("✅ [WordSet] sendInvitation Success: inviteeId=\(inviteeId)")
-      } catch {
-        failureCount += 1
-        let errMsg = String(describing: error)
-        AppLog.wordset.info("❌ [WordSet] sendInvitation Error: inviteeId=\(inviteeId), error=\(error)")
-        lastSendInvitationError = errMsg
-      }
-    }
-    AppLog.wordset.info("[WordSet] 邀請結果：Success=\(successCount), Error=\(failureCount)")
-    await MainActor.run {
-      // 發送成功的人加入「邀請中」，並從選取中移除
-      for id in succeededIds {
-        pendingInviteeIds.insert(id)
-        localSelection.remove(id)
-      }
-      if failureCount > 0 {
-        let hint = (lastSendInvitationError?.contains("word_set not found") == true)
-          ? "（此單字集尚未同步至伺服器，請確認網路連線後重試。）"
-          : ""
-        sendInvitationErrorMessage = "有 \(failureCount) 筆邀請發送失敗，請稍後再試。\(hint)"
-      } else {
-        dismiss()
-      }
-    }
-  }
-}
-
-// MARK: - 共編成員 Avatar Row & List
-
-extension WordSetDetailView {
   private var collaboratorAvatarRow: some View {
     Button {
       showingCollaboratorList = true
@@ -678,68 +396,3 @@ extension WordSetDetailView {
     .buttonStyle(.plain)
   }
 }
-
-private struct CollaboratorAvatarView: View {
-  let displayName: String
-  var avatarURL: String?
-  var size: CGFloat = 28
-
-  private var initials: String {
-    String(displayName.prefix(1))
-  }
-
-  var body: some View {
-    Group {
-      if let url = avatarURL, !url.isEmpty {
-        AvatarView(avatarURL: url, size: size)
-          .clipShape(Circle())
-      } else {
-        ZStack {
-          Circle()
-            .fill(Color.blue.opacity(0.85))
-          Text(initials)
-            .font(size > 32 ? .body.bold() : .caption.bold())
-            .foregroundStyle(.white)
-        }
-      }
-    }
-    .frame(width: size, height: size)
-    .overlay(
-      Circle()
-        .stroke(Color(.systemBackground), lineWidth: 2)
-    )
-  }
-}
-
-private struct CollaboratorListSheet: View {
-  @Environment(\.dismiss) private var dismiss
-  let collaborators: [WordSetCollaborator]
-
-  var body: some View {
-    NavigationStack {
-      List {
-        if collaborators.isEmpty {
-          Text("目前尚無共編成員")
-            .foregroundStyle(.secondary)
-        } else {
-          ForEach(collaborators) { c in
-            HStack(spacing: 12) {
-              CollaboratorAvatarView(displayName: c.displayName, avatarURL: c.avatarURL, size: 44)
-              Text(c.displayName)
-                .font(.body)
-              Spacer()
-            }
-          }
-        }
-      }
-      .navigationTitle("共編成員")
-      .toolbar {
-        ToolbarItem(placement: .confirmationAction) {
-          Button("關閉") { dismiss() }
-        }
-      }
-    }
-  }
-}
-
-

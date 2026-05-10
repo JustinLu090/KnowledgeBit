@@ -105,26 +105,13 @@ class SRSService {
   }
   
   // MARK: - 更新到期卡片數量到 App Group
-  // 計算並儲存今日到期卡片數量，供 Widget 使用
-  // 確保在主線程執行，避免線程安全問題
+  // 計算並儲存今日到期卡片數量，供 Widget 使用。
+  // UserDefaults / WidgetCenter 為 thread-safe，毋需手動派發到主線程。
   func updateDueCountToAppGroup(context: ModelContext) {
-    // 確保在主線程執行 UserDefaults 操作
-    if Thread.isMainThread {
-      let dueCount = getDueCards(now: Date(), context: context).count
-      userDefaults.set(dueCount, forKey: AppGroup.Keys.todayDueCount)
-      userDefaults.synchronize() // 確保立即寫入
-      
-      // 使用 WidgetReloader 統一管理刷新（帶防抖機制）
-      WidgetReloader.reloadAll()
-    } else {
-      DispatchQueue.main.async { [weak self] in
-        guard let self = self else { return }
-        let dueCount = self.getDueCards(now: Date(), context: context).count
-        self.userDefaults.set(dueCount, forKey: AppGroup.Keys.todayDueCount)
-        self.userDefaults.synchronize()
-        WidgetReloader.reloadAll()
-      }
-    }
+    let dueCount = getDueCards(now: Date(), context: context).count
+    userDefaults.set(dueCount, forKey: AppGroup.Keys.todayDueCount)
+    userDefaults.synchronize()
+    WidgetReloader.reloadAll()
   }
   
   // MARK: - 取得今日到期卡片數量

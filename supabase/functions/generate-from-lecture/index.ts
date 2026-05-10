@@ -1,8 +1,11 @@
 // Supabase Edge Function:
 // 1) Validate user-scoped PDF path in Storage bucket `lectures`
-// 2) Download PDF bytes
-// 3) Call Gemini multimodal generateContent
-// 4) Return strict JSON: { summary, flashcards, quiz }
+// 2) Look up cached OpenAI file_id in public.lecture_files (per user + path);
+//    if cached and not expired, skip download + upload entirely
+// 3) Otherwise download PDF bytes from Storage and upload to OpenAI Files API
+//    (purpose=user_data), then upsert the file_id into the cache
+// 4) Call OpenAI Responses API (gpt-4o-mini) with input_file referencing the uploaded file
+// 5) Return strict JSON: { summary, flashcards, quiz }
 
 declare const Deno: {
   serve: (handler: (req: Request) => Response | Promise<Response>) => void;
@@ -14,12 +17,14 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-2.5-flash";
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
-const MAX_PDF_BYTES = 20 * 1024 * 1024; // 20 MiB inline_data safety limit
+const OPENAI_MODEL = Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini";
+const OPENAI_FILES_URL = "https://api.openai.com/v1/files";
+const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
+const MAX_PDF_BYTES = 20 * 1024 * 1024; // 20 MiB sync limit
 const DEFAULT_MAX_FLASHCARDS = 16;
 const DEFAULT_MAX_MCQ = 8;
 const DEFAULT_MAX_FILL = 6;
+const FILE_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 days
 
 interface GenerateLectureRequest {
   storage_path: string;
@@ -86,16 +91,6 @@ async function getUserIdFromAuth(input: {
   const user = await resp.json();
   const userId = typeof user?.id === "string" ? user.id : null;
   return userId && userId.length > 0 ? userId : null;
-}
-
-function toBase64(bytes: Uint8Array): string {
-  let binary = "";
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    const sub = bytes.subarray(i, i + chunk);
-    binary += String.fromCharCode(...sub);
-  }
-  return btoa(binary);
 }
 
 function text(v: unknown): string {
@@ -278,6 +273,173 @@ async function enqueueLectureJob(input: {
   return jobId || null;
 }
 
+async function uploadPdfToOpenAI(input: {
+  apiKey: string;
+  bytes: Uint8Array;
+  filename: string;
+}): Promise<{ fileId: string | null; errorDetail: string | null }> {
+  const form = new FormData();
+  form.append("purpose", "user_data");
+  const blob = new Blob([input.bytes], { type: "application/pdf" });
+  form.append("file", blob, input.filename);
+
+  const resp = await fetch(OPENAI_FILES_URL, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${input.apiKey}` },
+    body: form,
+  });
+  if (!resp.ok) {
+    const detail = await resp.text();
+    return { fileId: null, errorDetail: detail };
+  }
+  const data = await resp.json();
+  const fileId = typeof data?.id === "string" ? data.id : null;
+  return { fileId, errorDetail: fileId ? null : "Missing file id in OpenAI response" };
+}
+
+async function deleteOpenAIFile(apiKey: string, fileId: string): Promise<void> {
+  try {
+    await fetch(`${OPENAI_FILES_URL}/${fileId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+  } catch {
+    // best-effort cleanup; ignore
+  }
+}
+
+interface CachedFileLookup {
+  /** Live cached file_id (still within TTL); reuse without re-uploading. */
+  liveFileId: string | null;
+  /** Stale cached file_id (TTL expired); should be deleted from OpenAI before re-upload. */
+  staleFileId: string | null;
+}
+
+async function lookupCachedFileId(input: {
+  supabaseUrl: string;
+  supabaseAnon: string;
+  authHeader: string;
+  storagePath: string;
+}): Promise<CachedFileLookup> {
+  const url = new URL(`${input.supabaseUrl}/rest/v1/lecture_files`);
+  url.searchParams.set("select", "openai_file_id,expires_at");
+  url.searchParams.set("storage_path", `eq.${input.storagePath}`);
+  url.searchParams.set("limit", "1");
+  try {
+    const resp = await fetch(url.toString(), {
+      headers: {
+        Authorization: input.authHeader,
+        apikey: input.supabaseAnon,
+        Accept: "application/json",
+      },
+    });
+    if (!resp.ok) return { liveFileId: null, staleFileId: null };
+    const rows = await resp.json();
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return { liveFileId: null, staleFileId: null };
+    }
+    const row = rows[0] as Record<string, unknown>;
+    const fileId = typeof row.openai_file_id === "string" ? row.openai_file_id : null;
+    const expiresAtRaw = typeof row.expires_at === "string" ? row.expires_at : null;
+    if (!fileId || !expiresAtRaw) return { liveFileId: null, staleFileId: null };
+    const expiresAt = Date.parse(expiresAtRaw);
+    if (Number.isNaN(expiresAt)) return { liveFileId: null, staleFileId: null };
+    if (expiresAt > Date.now()) {
+      return { liveFileId: fileId, staleFileId: null };
+    }
+    return { liveFileId: null, staleFileId: fileId };
+  } catch {
+    return { liveFileId: null, staleFileId: null };
+  }
+}
+
+async function upsertCachedFileId(input: {
+  supabaseUrl: string;
+  supabaseAnon: string;
+  authHeader: string;
+  userId: string;
+  storagePath: string;
+  fileId: string;
+  ttlSeconds: number;
+}): Promise<void> {
+  const expiresAt = new Date(Date.now() + input.ttlSeconds * 1000).toISOString();
+  const payload = {
+    user_id: input.userId,
+    storage_path: input.storagePath,
+    openai_file_id: input.fileId,
+    expires_at: expiresAt,
+  };
+  try {
+    await fetch(`${input.supabaseUrl}/rest/v1/lecture_files`, {
+      method: "POST",
+      headers: {
+        Authorization: input.authHeader,
+        apikey: input.supabaseAnon,
+        "Content-Type": "application/json",
+        Prefer: "resolution=merge-duplicates,return=minimal",
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    // Cache write failures are non-fatal; the request still succeeds.
+  }
+}
+
+/** 從 Responses API 回應中萃取最終文字輸出。 */
+function extractResponsesText(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const root = data as Record<string, unknown>;
+  const direct = root.output_text;
+  if (typeof direct === "string" && direct.length > 0) return direct;
+
+  const output = Array.isArray(root.output) ? root.output : [];
+  const buf: string[] = [];
+  for (const item of output) {
+    if (!item || typeof item !== "object") continue;
+    const it = item as Record<string, unknown>;
+    const content = Array.isArray(it.content) ? it.content : [];
+    for (const c of content) {
+      if (!c || typeof c !== "object") continue;
+      const part = c as Record<string, unknown>;
+      const t = part.text;
+      if (typeof t === "string") buf.push(t);
+    }
+  }
+  const joined = buf.join("");
+  return joined.length > 0 ? joined : null;
+}
+
+async function runOpenAILecture(input: {
+  apiKey: string;
+  fileId: string;
+  systemPrompt: string;
+  userPrompt: string;
+  temperature: number;
+}): Promise<Response> {
+  return await fetch(OPENAI_RESPONSES_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${input.apiKey}`,
+    },
+    body: JSON.stringify({
+      model: OPENAI_MODEL,
+      instructions: input.systemPrompt,
+      input: [
+        {
+          role: "user",
+          content: [
+            { type: "input_text", text: input.userPrompt },
+            { type: "input_file", file_id: input.fileId },
+          ],
+        },
+      ],
+      temperature: input.temperature,
+      text: { format: { type: "json_object" } },
+    }),
+  });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -311,8 +473,8 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseAnon = Deno.env.get("SUPABASE_ANON_KEY");
-    const geminiKey = Deno.env.get("GEMINI_API_KEY");
-    if (!supabaseUrl || !supabaseAnon || !geminiKey) {
+    const openaiKey = Deno.env.get("OPENAI_API_KEY");
+    if (!supabaseUrl || !supabaseAnon || !openaiKey) {
       return new Response(JSON.stringify({ error: "Missing runtime secrets" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -348,77 +510,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    const fileResp = await fetch(
-      `${supabaseUrl}/storage/v1/object/lectures/${encodeURI(storagePath)}`,
-      {
-        headers: {
-          Authorization: authHeader ?? "",
-          apikey: supabaseAnon,
-        },
-      }
-    );
-    if (!fileResp.ok) {
-      const detail = await fileResp.text();
-      return new Response(JSON.stringify({ error: "Failed to download PDF from storage", detail }), {
-        status: 502,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const contentType = fileResp.headers.get("content-type") ?? "";
-    if (!contentType.toLowerCase().includes("application/pdf")) {
-      return new Response(JSON.stringify({ error: "File is not a PDF" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const bytes = new Uint8Array(await fileResp.arrayBuffer());
-    if (bytes.length === 0) {
-      return new Response(JSON.stringify({ error: "PDF is empty" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    if (bytes.length > MAX_PDF_BYTES) {
-      if (body.allow_async_job === true) {
-        const jobId = await enqueueLectureJob({
-          supabaseUrl,
-          supabaseAnon,
-          authHeader: authHeader ?? "",
-          userId,
-          body,
-        });
-        if (jobId) {
-          return new Response(
-            JSON.stringify({
-              status: "queued",
-              job_id: jobId,
-              reason: "PDF too large for synchronous mode; queued for async processing",
-              size_bytes: bytes.length,
-              max_sync_bytes: MAX_PDF_BYTES,
-            }),
-            {
-              status: 202,
-              headers: { ...corsHeaders, "Content-Type": "application/json" },
-            }
-          );
-        }
-      }
-      return new Response(
-        JSON.stringify({
-          error: "PDF too large for synchronous processing",
-          max_bytes: MAX_PDF_BYTES,
-          size_bytes: bytes.length,
-          hint: "Set allow_async_job=true to queue this file in lecture_jobs.",
-        }),
-        {
-          status: 413,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
-
     const language = text(body.language) || "繁體中文";
     const difficulty = text(body.difficulty) || "medium";
     const maxFlashcards = clamp(Number(body.max_flashcards ?? DEFAULT_MAX_FLASHCARDS), 6, 24);
@@ -433,46 +524,136 @@ Deno.serve(async (req) => {
       maxMcq,
       maxFill,
     });
-    const userPrompt = `Analyze this lecture PDF and produce structured study material.`;
-    const inlineData = toBase64(bytes);
+    const userPrompt = `Analyze this lecture PDF and produce structured study material. Return the result as a single JSON object that matches the schema described in the instructions.`;
 
-    const runGemini = async (temperature: number): Promise<Response> =>
-      await fetch(`${GEMINI_URL}?key=${geminiKey}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                { text: userPrompt },
-                {
-                  inline_data: {
-                    mime_type: "application/pdf",
-                    data: inlineData,
-                  },
-                },
-              ],
-            },
-          ],
-          systemInstruction: { parts: [{ text: systemPrompt }] },
-          generationConfig: {
-            temperature,
-            responseMimeType: "application/json",
+    // Cache lookup: if we already uploaded this PDF for this user and the
+    // entry is still within TTL, skip both the Storage download and the
+    // OpenAI Files upload.
+    const cached = await lookupCachedFileId({
+      supabaseUrl,
+      supabaseAnon,
+      authHeader: authHeader ?? "",
+      storagePath,
+    });
+
+    let fileId: string;
+    if (cached.liveFileId) {
+      fileId = cached.liveFileId;
+    } else {
+      // Best-effort cleanup of stale OpenAI file before re-uploading.
+      if (cached.staleFileId) {
+        await deleteOpenAIFile(openaiKey, cached.staleFileId);
+      }
+
+      const fileResp = await fetch(
+        `${supabaseUrl}/storage/v1/object/lectures/${encodeURI(storagePath)}`,
+        {
+          headers: {
+            Authorization: authHeader ?? "",
+            apikey: supabaseAnon,
           },
-        }),
-      });
+        }
+      );
+      if (!fileResp.ok) {
+        const detail = await fileResp.text();
+        return new Response(JSON.stringify({ error: "Failed to download PDF from storage", detail }), {
+          status: 502,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
-    let geminiResponse = await runGemini(0.4);
-    if (!geminiResponse.ok) {
-      const detail = await geminiResponse.text();
-      return new Response(JSON.stringify({ error: "Gemini request failed", detail }), {
+      const contentType = fileResp.headers.get("content-type") ?? "";
+      if (!contentType.toLowerCase().includes("application/pdf")) {
+        return new Response(JSON.stringify({ error: "File is not a PDF" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const bytes = new Uint8Array(await fileResp.arrayBuffer());
+      if (bytes.length === 0) {
+        return new Response(JSON.stringify({ error: "PDF is empty" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (bytes.length > MAX_PDF_BYTES) {
+        if (body.allow_async_job === true) {
+          const jobId = await enqueueLectureJob({
+            supabaseUrl,
+            supabaseAnon,
+            authHeader: authHeader ?? "",
+            userId,
+            body,
+          });
+          if (jobId) {
+            return new Response(
+              JSON.stringify({
+                status: "queued",
+                job_id: jobId,
+                reason: "PDF too large for synchronous mode; queued for async processing",
+                size_bytes: bytes.length,
+                max_sync_bytes: MAX_PDF_BYTES,
+              }),
+              {
+                status: 202,
+                headers: { ...corsHeaders, "Content-Type": "application/json" },
+              }
+            );
+          }
+        }
+        return new Response(
+          JSON.stringify({
+            error: "PDF too large for synchronous processing",
+            max_bytes: MAX_PDF_BYTES,
+            size_bytes: bytes.length,
+            hint: "Set allow_async_job=true to queue this file in lecture_jobs.",
+          }),
+          {
+            status: 413,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+
+      const filename = storagePath.split("/").pop() || "lecture.pdf";
+      const upload = await uploadPdfToOpenAI({ apiKey: openaiKey, bytes, filename });
+      if (!upload.fileId) {
+        return new Response(
+          JSON.stringify({ error: "OpenAI file upload failed", detail: upload.errorDetail }),
+          { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      fileId = upload.fileId;
+
+      await upsertCachedFileId({
+        supabaseUrl,
+        supabaseAnon,
+        authHeader: authHeader ?? "",
+        userId,
+        storagePath,
+        fileId,
+        ttlSeconds: FILE_CACHE_TTL_SECONDS,
+      });
+    }
+
+    let openaiResp = await runOpenAILecture({
+      apiKey: openaiKey,
+      fileId,
+      systemPrompt,
+      userPrompt,
+      temperature: 0.4,
+    });
+    if (!openaiResp.ok) {
+      const detail = await openaiResp.text();
+      return new Response(JSON.stringify({ error: "OpenAI request failed", detail }), {
         status: 502,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    let data = await geminiResponse.json();
-    let textPart = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    let data = await openaiResp.json();
+    let textPart = extractResponsesText(data);
     let parsed: LectureResult | null = null;
     if (typeof textPart === "string") {
       try {
@@ -483,16 +664,22 @@ Deno.serve(async (req) => {
     }
 
     if (!parsed) {
-      geminiResponse = await runGemini(0.2);
-      if (!geminiResponse.ok) {
-        const detail = await geminiResponse.text();
-        return new Response(JSON.stringify({ error: "Gemini retry failed", detail }), {
+      openaiResp = await runOpenAILecture({
+        apiKey: openaiKey,
+        fileId,
+        systemPrompt,
+        userPrompt,
+        temperature: 0.2,
+      });
+      if (!openaiResp.ok) {
+        const detail = await openaiResp.text();
+        return new Response(JSON.stringify({ error: "OpenAI retry failed", detail }), {
           status: 502,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      data = await geminiResponse.json();
-      textPart = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      data = await openaiResp.json();
+      textPart = extractResponsesText(data);
       if (typeof textPart === "string") {
         try {
           parsed = validateLectureResult(JSON.parse(textPart), task);
@@ -505,7 +692,7 @@ Deno.serve(async (req) => {
     if (!parsed) {
       return new Response(
         JSON.stringify({
-          error: "Invalid JSON from Gemini",
+          error: "Invalid JSON from OpenAI",
           raw: typeof textPart === "string" ? textPart : null,
         }),
         {
