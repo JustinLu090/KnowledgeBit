@@ -1,0 +1,27 @@
+sequenceDiagram
+    participant U as 使用者
+    participant App as iOS App
+    participant EF as Edge Function
+    participant AI as OpenAI
+    participant DB as Supabase DB
+    participant SD as SwiftData(App Group)
+    participant W as 小工具
+
+    Note over U,W: 流程一：AI 產生單字卡
+    U->>App: 輸入主題（含已存在單字）
+    App->>EF: invoke generate-card（帶 JWT）
+    EF->>AI: gpt-4o-mini（JSON 模式）
+    AI-->>EF: 多張卡片陣列
+    EF-->>App: 過濾重複/空白後回傳
+    App->>SD: 寫入本地卡片
+    App->>DB: 同步單字集/卡片
+    App->>W: 觸發小工具重載
+
+    Note over U,W: 流程二：測驗 → SRS → 經驗值
+    U->>App: 翻卡測驗作答（記得/不記得）
+    App->>SD: 寫入 StudyLog
+    App->>App: SRSService 更新 srsLevel / dueAt
+    App->>App: 更新每日任務、DailyStats
+    App->>SD: ExperienceStore 加經驗
+    App->>DB: 同步等級/經驗
+    App->>W: 重載小工具（到期數/等級/EXP）

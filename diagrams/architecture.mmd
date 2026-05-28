@@ -1,0 +1,28 @@
+graph TD
+    subgraph Device["iPhone（裝置端）"]
+        APP["KnowledgeBit 主 App<br/>SwiftUI + SwiftData"]
+        WIDGET["主畫面小工具<br/>WidgetKit + App Intents"]
+        AG[("App Group 共用容器<br/>SwiftData SQLite + UserDefaults")]
+        APP <--> AG
+        WIDGET <--> AG
+    end
+
+    subgraph Supabase["Supabase 雲端後端"]
+        AUTH["Auth（Google 登入）"]
+        DB[("PostgreSQL + RLS<br/>16 資料表 / 24 RPC")]
+        EF["Edge Functions（Deno）<br/>generate-card / generate-quiz<br/>generate-from-lecture / join-preview"]
+        ST[("Storage：lectures bucket")]
+    end
+
+    OPENAI["OpenAI API<br/>gpt-4o-mini"]
+    GOOGLE["Google Sign-In"]
+
+    APP -->|登入| AUTH
+    AUTH -.-> GOOGLE
+    APP -->|讀寫同步| DB
+    APP -->|上傳 PDF| ST
+    APP -->|呼叫 AI| EF
+    EF -->|產生內容| OPENAI
+    EF -->|讀寫| DB
+    EF -->|讀取 PDF| ST
+    DB <-->|即時對戰訂閱| APP
