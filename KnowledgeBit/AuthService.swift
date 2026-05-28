@@ -52,7 +52,7 @@ final class AuthService: ObservableObject {
     
     let newClient: SupabaseClient = SupabaseClient(
       supabaseURL: SupabaseConfig.url,
-      supabaseKey: SupabaseConfig.anonKey,
+      supabaseKey: SupabaseConfig.publishableKey,
       options: options
     )
     client = newClient
