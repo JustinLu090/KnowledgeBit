@@ -29,7 +29,7 @@ interface QuizQuestionItem {
 }
 
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
-const OPENAI_MODEL = Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini";
+const OPENAI_MODEL = Deno.env.get("OPENAI_MODEL") ?? "gpt-4o";
 const MAX_WORDS = 15;
 
 type DetectedLang = "ko" | "ja" | "en";

@@ -1,4 +1,4 @@
-// Supabase Edge Function: 根據使用者輸入的主題，用 OpenAI gpt-4o-mini 產生「多張」單字卡，歸於同一單字集。
+// Supabase Edge Function: 根據使用者輸入的主題，用 OpenAI gpt-4o 產生「多張」單字卡，歸於同一單字集。
 // API Key 請在 Supabase Dashboard 設定 Secret: OPENAI_API_KEY
 declare const Deno: {
   serve: (handler: (req: Request) => Response | Promise<Response>) => void;
@@ -23,7 +23,7 @@ interface GeneratedCardItem {
 }
 
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
-const OPENAI_MODEL = Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini";
+const OPENAI_MODEL = Deno.env.get("OPENAI_MODEL") ?? "gpt-4o";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {

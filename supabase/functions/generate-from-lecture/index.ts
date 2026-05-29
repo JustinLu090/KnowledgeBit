@@ -4,7 +4,7 @@
 //    if cached and not expired, skip download + upload entirely
 // 3) Otherwise download PDF bytes from Storage and upload to OpenAI Files API
 //    (purpose=user_data), then upsert the file_id into the cache
-// 4) Call OpenAI Responses API (gpt-4o-mini) with input_file referencing the uploaded file
+// 4) Call OpenAI Responses API (gpt-4o) with input_file referencing the uploaded file
 // 5) Return strict JSON: { summary, flashcards, quiz }
 
 declare const Deno: {
@@ -17,7 +17,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const OPENAI_MODEL = Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini";
+const OPENAI_MODEL = Deno.env.get("OPENAI_MODEL") ?? "gpt-4o";
 const OPENAI_FILES_URL = "https://api.openai.com/v1/files";
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const MAX_PDF_BYTES = 20 * 1024 * 1024; // 20 MiB sync limit
